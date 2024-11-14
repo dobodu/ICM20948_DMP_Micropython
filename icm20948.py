@@ -38,11 +38,25 @@ LIBNAME = "ICM20948"
 #        [[ 1  0  0]
 #         [ 0 -1  0]
 #         [ 0  0 -1]]
-#        
+#
+# Working / Not working DMP Sensors
+#
+#  ACCELEROMETER :					OK
+#  GYROSCOPE :						To debug
+#  RAW_ACCELEROMETER
+#  RAW_GYROSCOPE
+#  MAGNETIC_FIELD_UNCALIBRATED :	To check, seem to activate but no header detected
+#  GYROSCOPE_UNCALIBRATED
+#  ACTIVITY_CLASSIFICATON
+#  STEP_DETECTOR
+#  STEP_COUNTER
+#  GAME_ROTATION_VECTOR
+#  ROTATION_VECTOR
+#  GEOM_ROTATION_VECTOR : OK
+#
 # To do :
 #
 # Reading check (the same result should be obtained between ICM and DMP), add sensitivity to DMP...
-#     Accelerometer OK
 # Implement DMP FIFO decoding for all required activity
 # Implement DMP bias writting for accelerometer and gyro
 # Check self.DMP_set_acc_full_scale
@@ -456,7 +470,7 @@ DMP_EIS_AUTH_INPUT = 0xA04 # 160*16+4
 DMP_EIS_AUTH_OUTPUT = 0xA00 # 160*16+0
 #B2S
 DMP_B2S_RATE = 0x308 # 48*16+8
-#B2S MOUNTING MATRIX
+#BRING TO SEE MOUNTING MATRIX 
 DMP_B2S_MTX_00 = 0xD00 # 208*16+0
 DMP_B2S_MTX_01 = 0xD04 # 208*16+4
 DMP_B2S_MTX_02 = 0xD08 # 208*16+8
@@ -640,7 +654,7 @@ class ICM20948:
         self._membank = -1	#Memory bank selector
         self._acc_s = 0 # acc sensitivity
         self._gyro_s = 0 # gyro sensitivity
-        self._mag_s = 0 # mag sensitivity
+        self._mag_s = AK_MAGNETOMETER_SENSITIVITY # mag sensitivity
         self._ready = False
         self._buffer_1 = bytearray(1)
         self._buffer_n = bytearray(1)
@@ -687,8 +701,6 @@ class ICM20948:
         self.set_acc_full_scale()
         
         self.set_temp_low_pass(enabled=True, mode=1)
-        
-        self._mag_s = AK_MAGNETOMETER_SENSITIVITY
 
         #Configure Interruption PIN     
 
@@ -1379,8 +1391,11 @@ class ICM20948:
             for i in range(DMP_Raw_Gyro_Bytes + DMP_Gyro_Bias_Bytes) :
                 data_ordered[DMP_Raw_Gyro_Byte_Ordering[i]]=data[i]
             gx,gy,gz,gbx,gby,gbz = unpack_from(">6h", data_ordered)
+            gx *= self._gyro_s #adjust result with sensiticity
+            gy *= self._gyro_s
+            gz *= self._gyro_s
             self._dbg("Fifo gyroscope gx", gx,"\tgy",gy, "\tgz",gz)
-            self._dbg("Fifo gyroscope bias gbx", gbx,"\tgby",gby, "\gbz",gbz)
+            self._dbg("Fifo gyroscope bias gbx", gbx,"\tgby",gby, "\tgbz",gbz)
             size -= DMP_Raw_Gyro_Bytes + DMP_Gyro_Bias_Bytes
             
         #Compass
@@ -1391,6 +1406,9 @@ class ICM20948:
             for i in range(DMP_Compass_Bytes) :
                 data_ordered[DMP_Pedom_Quat6_Byte_Ordering[i]]=data[i]
             mx,my,mz = unpack_from(">3h", data_ordered)
+            mx *= self._mag_s #adjust result with sensiticity
+            my *= self._mag_s
+            mz *= self._mag_s
             self._dbg("Fifo magnetometer mx", mx,"\tmy",my, "\tmz",mz)
             size -= DMP_Compass_Bytes
             
@@ -1598,7 +1616,7 @@ class ICM20948:
         #Get Android Control Bits
         android_ctl_bits = ANDROID_SENSORS_CTRL_BITS[android_sensor]
         self._dbg("Activation ICM sensor",icm_sensor, "- Android CTRL Bits", hex(android_ctl_bits))
-        #Store Android sensor to object android_sensor_bitmask
+        #Store Android sensor to objects _android_sensor_bitmask_0 and 1
         if android_sensor < 32 :
             if enable :
                 self._android_sensor_bitmask_0 |= 0x1 << android_sensor
@@ -1609,30 +1627,34 @@ class ICM20948:
                 self._android_sensor_bitmask_1 |= 0x1 << (android_sensor-32)
             else :
                 self._android_sensor_bitmask_1 &= ~(0x1 << (android_sensor-32))
-        #Reconstruc DATA_OUT_CTL1 from self._android_sensor_bitmask_0 & 1
+        #Reconstruc DATA_OUT_CTL1 from _android_sensor_bitmask_0 & 1
         _data_out_ctl = 0
         _data_out_ctl2 = 0
         _data_rdy_status = 0
         _inv_event_ctl = 0
         for x in range(32) :
+            _needed_sensor = False
             _bitmask = 0x1 << x
             if self._android_sensor_bitmask_0 & _bitmask > 0 :
                 _data_out_ctl |= ANDROID_SENSORS_CTRL_BITS[x]
+                _needed_sensor = True
             if self._android_sensor_bitmask_1 & _bitmask > 0 :
                 _data_out_ctl |= ANDROID_SENSORS_CTRL_BITS[x+32]
+                _needed_sensor = True
         #Reconstruct DATA_RDY_STATUS and INV_EVENT_CTRL
-            #Case Acceleartion
-            if ((_bitmask & INV_NEEDS_ACCEL_MASK0) | (_bitmask & INV_NEEDS_ACCEL_MASK1) > 0) :
-                _data_rdy_status |= DMP_Data_ready_Accel
-                _inv_event_ctl |= DMP_Motion_Event_Control_Accel_Calibr
-            #Case Gyro
-            if ((_bitmask & INV_NEEDS_GYRO_MASK0) | (_bitmask & INV_NEEDS_GYRO_MASK1) > 0) :
-                _data_rdy_status |= DMP_Data_ready_Gyro
-                _inv_event_ctl |= DMP_Motion_Event_Control_Gyro_Calibr
-            #Case Compass
-            if ((_bitmask & INV_NEEDS_COMPAS_MASK0) | (_bitmask & INV_NEEDS_COMPAS_MASK1) > 0) :
-                _data_rdy_status |= DMP_Data_ready_Compass
-                _inv_event_ctl |= DMP_Motion_Event_Control_Compass_Calibr
+            if _needed_sensor : #if sensor is not needed, nothing to do
+                #Case Acceleartion
+                if ((_bitmask & INV_NEEDS_ACCEL_MASK0) | (_bitmask & INV_NEEDS_ACCEL_MASK1) > 0) :
+                    _data_rdy_status |= DMP_Data_ready_Accel
+                    _inv_event_ctl |= DMP_Motion_Event_Control_Accel_Calibr
+                #Case Gyro
+                if ((_bitmask & INV_NEEDS_GYRO_MASK0) | (_bitmask & INV_NEEDS_GYRO_MASK1) > 0) :
+                    _data_rdy_status |= DMP_Data_ready_Gyro
+                    _inv_event_ctl |= DMP_Motion_Event_Control_Gyro_Calibr
+                #Case Compass
+                if ((_bitmask & INV_NEEDS_COMPAS_MASK0) | (_bitmask & INV_NEEDS_COMPAS_MASK1) > 0) :
+                    _data_rdy_status |= DMP_Data_ready_Compass
+                    _inv_event_ctl |= DMP_Motion_Event_Control_Compass_Calibr
         #Reconstruc DATA_OUT_CTL2
         if ((_data_out_ctl & DMP_Data_Output_Control_1_Accel ) > 0) :
             _data_out_ctl2 |= DMP_Data_Output_Control_2_Gyro_Accuracy
@@ -1911,20 +1933,30 @@ class ICM20948:
         return zy_axis, zx_axis, xy_axis
     
     #3-tupple representing the current Pan Tilt and Roll euler angle in degree
+    #comming for 3 q1,q2,q3 quatenion
     def euler_q(self,q):
+        
+        qx = q[0]
+        qy = q[1]
+        qz = q[2]
+        qx2 = qx * qx #qx2 stands for qx^2
+        qy2 = qy * qy
+        qz2 = qz * qz
+        q02 = 1 - (qx2 + qy2 + qz2)
+        q0 = sqrt #q0 reconstruction done
+        
  
-        jsqr = q[1] * q[1]
-        t0 = +2.0 * (q[3] * q[0] + q[1] * q[2])
-        t1 = +1.0 - 2.0 * (q[0] * q[0] + jsqr)
+        t0 = +2.0 * (qz * q0 + qx * qy)
+        t1 = +1.0 - 2.0 * (q02 + qx2)
         Roll = degrees(atan2(t0, t1))
 
-        t2 = +2.0 * (q[3] * q[1] - q[2] * q[0])
+        t2 = +2.0 * (qz * qx - qy * q[0])
         t2 = +1.0 if t2 > +1.0 else t2
         t2 = -1.0 if t2 < -1.0 else t2
         Tilt = degrees(asin(t2))
 
-        t3 = +2.0 * (q[3] * q[2] + q[0] * q[1])
-        t4 = +1.0 - 2.0 * (jsqr + q[2] * q[2])
+        t3 = +2.0 * (qz * qy + q0 * qx)
+        t4 = +1.0 - 2.0 * (qx2 + qy2)
         Pan = degrees(atan2(t3, t4))
 
         return (Roll, Tilt, Pan)
