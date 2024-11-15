@@ -1254,8 +1254,8 @@ class ICM20948:
         #   [ 0  0 -1]]     [ 20 21 22]]
         # 1 value need to be scaled from hardware unit to uT
         #Inside DMP, AK9916 output 16bit signed (+/- 32752 corresponding to +/-4912uT
-        #1uT = 6,666666 unit = 2^30
-        #Max 2^30 / 6.6666666 = 161061273 = 0x9999999
+        #1unit = 0.15 uT
+        #Max 2^30 * 0,15 = 161061273 = 0x9999999
         #-0x9999999 = 0xF6666667
         #DMP Compass Output will be in uT 
 
@@ -1414,9 +1414,7 @@ class ICM20948:
             for i in range(DMP_Compass_Bytes) :
                 data_ordered[DMP_Pedom_Quat6_Byte_Ordering[i]]=data[i]
             mx,my,mz = unpack_from(">3h", data_ordered)
-            mx *= self._mag_s #adjust result with sensiticity
-            my *= self._mag_s
-            mz *= self._mag_s
+            #No need to adjust sensitivity already included in mount matrix configuration
             self._dbg("Fifo magnetometer mx", mx,"\tmy",my, "\tmz",mz)
             size -= DMP_Compass_Bytes
             
@@ -1454,7 +1452,7 @@ class ICM20948:
             q1 /= 2**30  # The quaternion data is scaled by 2^30.
             q2 /= 2**30
             q3 /= 2**30
-            self._dbg("Fifo Quaternion q1", q1,"\tq2", q2, "\tq3", q3, "\accuracy", acc)
+            self._dbg("Fifo Quaternion q1", q1,"\tq2", q2, "\tq3", q3, "\taccuracy", acc)
             size -= DMP_Quat9_Bytes
             
         #PQuaternion 6
@@ -1598,27 +1596,9 @@ class ICM20948:
         self._bus.readfrom_mem_into(self._addr, ICM_MEM_R_W , self._buffer_n)
         return self._buffer_n
         self.sleep(True)
-        
-    #Enable specific DMP sensor
-    def DMP_enable_sensor(self, sensor, enable):
-        #adjust _dmpbitmap depending on sensor enabled or disabled
-        if enable :
-            self._dmp_data_out_ctl1 |= sensor
-        else :
-            self._dmp_data_out_ctl1 &= ~sensor
-        self._dbg("Current DMP sensor", hex(self._dmp_data_out_ctl1))
-        #Escape from LP mode (maybe should also avoid sleep mode ?)
-        self.sleep(False)
-        #Then write dmp_bitmap to mem bank
-        barray = bytearray(2)
-        barray[0] = self._dmp_data_out_ctl1 >> 8
-        barray[1] = self._dmp_data_out_ctl1 & 0xFF
-        self.DMP_write(DMP_DATA_OUT_CTL1, barray)
-        #Come back to sleep Mode
-        self.sleep(True)
-        
+            
     #Activate specific DMP sensor 
-    def DMP_activate_sensor(self, icm_sensor, enable=True):
+    def DMP_enable_sensor(self, icm_sensor, enable=True):
         #Convert strind ICM_sensor to android_sensor number
         android_sensor = DMP_SENSORS_2_ANDROID[DMP_SENSORS[icm_sensor]]
         self._dbg("ICM Sensor", icm_sensor, enable, "ie Nb", DMP_SENSORS[icm_sensor], "ie Android", DMP_SENSORS_2_ANDROID[DMP_SENSORS[icm_sensor]])
