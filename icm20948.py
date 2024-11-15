@@ -41,18 +41,24 @@ LIBNAME = "ICM20948"
 #
 # Working / Not working DMP Sensors
 #
-#  ACCELEROMETER :					OK
-#  GYROSCOPE :						To debug
-#  RAW_ACCELEROMETER
-#  RAW_GYROSCOPE
-#  MAGNETIC_FIELD_UNCALIBRATED :	To check, seem to activate but no header detected
-#  GYROSCOPE_UNCALIBRATED
-#  ACTIVITY_CLASSIFICATON
-#  STEP_DETECTOR
-#  STEP_COUNTER
-#  GAME_ROTATION_VECTOR
-#  ROTATION_VECTOR
-#  GEOM_ROTATION_VECTOR : OK
+#  Sensor                        Working     Tested
+#  -----------------------------------------------------
+#  ACCELEROMETER :               OK          OK
+#  GYROSCOPE :                   OK          To debug
+#  RAW_ACCELEROMETER             OK          OK
+#  RAW_GYROSCOPE                 OK          To debug
+#  MAGNETIC_FIELD_UNCALIBRATED : OK          To check
+#  GYROSCOPE_UNCALIBRATED        OK          To debug
+#  ACTIVITY_CLASSIFICATON        Not working missing ANDROID_SENSORS_CTRL_BITS
+#  STEP_DETECTOR                 Not working missing header2 ?
+#  STEP_COUNTER                  Not working missing header2 ?
+#  GAME_ROTATION_VECTOR          OK          To check
+#  ROTATION_VECTOR               OK          To check
+#  GEOM_ROTATION_VECTOR :        OK          OK
+#  GEOM_FIELD :                  OK          To decode
+#  GRAVITY :                     OK          To check
+#  LINEAR_ACCELERATION           OK          To check
+#  ORIENTATION                   OK          To check
 #
 # To do :
 #
@@ -574,14 +580,15 @@ DMP_Data_Output_Control_2_Secondary_On_Off = 0x0040
 
 #DMP Interruption Masks
 #Determine wich sensor needs to be on (64bits)
-INV_NEEDS_ACCEL_MASK0 =		0b01010000011100010111100101000111
-INV_NEEDS_ACCEL_MASK1 =		0b00010111011000000000000000000000
-INV_NEEDS_GYRO_MASK0 =		0b00011000011100011000000001100111
-INV_NEEDS_GYRO_MASK1 =		0b00011000000100000000000000000000
-INV_NEEDS_COMPAS_MASK0 =	0b00110000000100100000100011000001
-INV_NEEDS_COMPAS_MASK1 = 	0b00100001000000000000000000000000
-INV_NEEDS_PRES_MASK0 = 		0b00000010000000000000000000001000
-INV_NEEDS_PRES_MASK1 = 		0b00000000000000000000000000000000
+INV_NEEDS_ACCEL_MASK0 =  0b11100010100111101000111000001010
+INV_NEEDS_ACCEL_MASK1 =  0b00000000000000000000011011101000
+INV_NEEDS_GYRO_MASK0 =   0b11100110000000011000111000011000
+INV_NEEDS_GYRO_MASK1 =   0b00000000000000000000100000011000
+INV_NEEDS_COMPAS_MASK0 = 0b10000011000100000100100000001100
+INV_NEEDS_COMPAS_MASK1 = 0b00000000000000000000000010000100
+INV_NEEDS_PRES_MASK0 =   0b00010000000000000000000001000000
+INV_NEEDS_PRES_MASK1 =   0b00000000000000000000000000000000
+
 
 #DMP Data ready
 DMP_Data_ready_Gyro = 0x0001
@@ -635,6 +642,7 @@ DMP_SENSORS = {
     "GEOM_ROTATION_VECTOR" : 11, "GEOM_FIELD" : 12, "WAKEUP_SIGNIFICANT_MOTION" : 13,
     "FLIP_PICKUP" : 14, "WAKEUP_TILT_DETECTOR" : 15, "GRAVITY" : 16, "LINEAR_ACCELERATION" : 17,
     "ORIENTATION" : 18, "B2S" : 19, "ALL" : 20}
+
 DMP_ACTIVITY = {"Drive": 0x01, "Walk": 0x02, "Run": 0x04, "Bike": 0x08, "Tilt": 0x10, "Still": 0x20}
 DMP_SECONDARY = {"Gyro_Off": 0x01, "Gyro_On": 0x02, "Compass_Off": 0x04, "Compass_On": 0x08, "Prox_Off": 0x10, "Prox_On": 0x20}
 
@@ -1253,7 +1261,7 @@ class ICM20948:
 
         DMP_COMPAS_MOUNT_MATRIX_SCALED_ZERO = bytearray([0x00, 0x00, 0x00, 0x00])
         DMP_COMPAS_MOUNT_MATRIX_SCALED_PLUS1 = bytearray([0x09, 0x99, 0x99, 0x99])
-        DMP_COMPAS_MOUNT_MATRIX_SCALED_MINUS1 = bytearray([0x09, 0x99, 0x99, 0x99])
+        DMP_COMPAS_MOUNT_MATRIX_SCALED_MINUS1 = bytearray([0xF6, 0x66, 0x66, 0x67])
         
         self.DMP_write(DMP_CPASS_MTX_00, DMP_COMPAS_MOUNT_MATRIX_SCALED_PLUS1)
         self.DMP_write(DMP_CPASS_MTX_01, DMP_COMPAS_MOUNT_MATRIX_SCALED_ZERO)
@@ -1613,48 +1621,51 @@ class ICM20948:
     def DMP_activate_sensor(self, icm_sensor, enable=True):
         #Convert strind ICM_sensor to android_sensor number
         android_sensor = DMP_SENSORS_2_ANDROID[DMP_SENSORS[icm_sensor]]
+        self._dbg("ICM Sensor", icm_sensor, enable, "ie Nb", DMP_SENSORS[icm_sensor], "ie Android", DMP_SENSORS_2_ANDROID[DMP_SENSORS[icm_sensor]])
         #Get Android Control Bits
         android_ctl_bits = ANDROID_SENSORS_CTRL_BITS[android_sensor]
         self._dbg("Activation ICM sensor",icm_sensor, "- Android CTRL Bits", hex(android_ctl_bits))
         #Store Android sensor to objects _android_sensor_bitmask_0 and 1
         if android_sensor < 32 :
+            _bitmask = 0x1 << android_sensor
             if enable :
-                self._android_sensor_bitmask_0 |= 0x1 << android_sensor
+                self._android_sensor_bitmask_0 |= _bitmask
             else :
-                self._android_sensor_bitmask_0 &= ~(0x1 << android_sensor)
+                self._android_sensor_bitmask_0 &= ~_bitmask
         else :
+            _bitmask = 0x1 << (android_sensor - 32)
             if enable :
-                self._android_sensor_bitmask_1 |= 0x1 << (android_sensor-32)
+                self._android_sensor_bitmask_1 |= _bitmask
             else :
-                self._android_sensor_bitmask_1 &= ~(0x1 << (android_sensor-32))
+                self._android_sensor_bitmask_1 &= ~_bitmask
+        self._dbg("Android Sensor bitmask", self._android_sensor_bitmask_0, self._android_sensor_bitmask_1)        
         #Reconstruc DATA_OUT_CTL1 from _android_sensor_bitmask_0 & 1
         _data_out_ctl = 0
         _data_out_ctl2 = 0
         _data_rdy_status = 0
         _inv_event_ctl = 0
         for x in range(32) :
-            _needed_sensor = False
             _bitmask = 0x1 << x
             if self._android_sensor_bitmask_0 & _bitmask > 0 :
                 _data_out_ctl |= ANDROID_SENSORS_CTRL_BITS[x]
-                _needed_sensor = True
             if self._android_sensor_bitmask_1 & _bitmask > 0 :
                 _data_out_ctl |= ANDROID_SENSORS_CTRL_BITS[x+32]
-                _needed_sensor = True
         #Reconstruct DATA_RDY_STATUS and INV_EVENT_CTRL
-            if _needed_sensor : #if sensor is not needed, nothing to do
-                #Case Acceleartion
-                if ((_bitmask & INV_NEEDS_ACCEL_MASK0) | (_bitmask & INV_NEEDS_ACCEL_MASK1) > 0) :
-                    _data_rdy_status |= DMP_Data_ready_Accel
-                    _inv_event_ctl |= DMP_Motion_Event_Control_Accel_Calibr
-                #Case Gyro
-                if ((_bitmask & INV_NEEDS_GYRO_MASK0) | (_bitmask & INV_NEEDS_GYRO_MASK1) > 0) :
-                    _data_rdy_status |= DMP_Data_ready_Gyro
-                    _inv_event_ctl |= DMP_Motion_Event_Control_Gyro_Calibr
-                #Case Compass
-                if ((_bitmask & INV_NEEDS_COMPAS_MASK0) | (_bitmask & INV_NEEDS_COMPAS_MASK1) > 0) :
-                    _data_rdy_status |= DMP_Data_ready_Compass
-                    _inv_event_ctl |= DMP_Motion_Event_Control_Compass_Calibr
+            #Case Acceleartion
+            if ((self._android_sensor_bitmask_0 & _bitmask & INV_NEEDS_ACCEL_MASK0) | (self._android_sensor_bitmask_1 & _bitmask & INV_NEEDS_ACCEL_MASK1) > 0) :
+                _data_rdy_status |= DMP_Data_ready_Accel
+                _inv_event_ctl |= DMP_Motion_Event_Control_Accel_Calibr
+            #Case Gyro
+            if ((self._android_sensor_bitmask_0 & _bitmask & INV_NEEDS_GYRO_MASK0) | (self._android_sensor_bitmask_1 & _bitmask & INV_NEEDS_GYRO_MASK1) > 0) :
+                _data_rdy_status |= DMP_Data_ready_Gyro
+                _inv_event_ctl |= DMP_Motion_Event_Control_Gyro_Calibr
+            #Case Compass
+            if ((self._android_sensor_bitmask_0 & _bitmask & INV_NEEDS_COMPAS_MASK0) | (self._android_sensor_bitmask_1 & _bitmask & INV_NEEDS_COMPAS_MASK1) > 0) :
+                _data_rdy_status |= DMP_Data_ready_Compass
+                _inv_event_ctl |= DMP_Motion_Event_Control_Compass_Calibr
+        self._dbg("DATA_OUT_CTRL", hex(_data_out_ctl))
+        self._dbg("DATA_RDY_STATUS", hex(_data_rdy_status))
+        self._dbg("INV_EVENT_CTRL", hex(_inv_event_ctl))
         #Reconstruc DATA_OUT_CTL2
         if ((_data_out_ctl & DMP_Data_Output_Control_1_Accel ) > 0) :
             _data_out_ctl2 |= DMP_Data_Output_Control_2_Gyro_Accuracy
