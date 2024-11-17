@@ -7,18 +7,10 @@ I2C0_SCL = Pin(07)          # I2C SCL
 I2C0_SDA = Pin(06)          #  I2C SCA
     
 i2c0 = I2C(0, sda=I2C0_SDA, scl=I2C0_SCL, freq = 400_000)
-imu = icm20948.ICM20948(i2c0,debug=True)
 
-imu.set_acc_sample_rate()
-imu.set_acc_low_pass()
-imu.set_acc_full_scale()
-imu.set_gyro_sample_rate()
-imu.set_gyro_low_pass()
-imu.set_gyro_full_scale()
+imu = icm20948.ICM20948(i2c0, dmp = False, debug=True)
 
-DMP = True
-
-if not DMP :
+if not imu.dmp_ready :
     
     imu.gyro_cal()
 
@@ -43,11 +35,23 @@ else :
     
     imu.DMP_config()
         
-    imu.DMP_activate_sensor("ACCELEROMETER",True)
-    imu.DMP_activate_sensor("GAME_ROTATION_VECTOR",True)
+    #imu.DMP_enable_sensor("ACCELEROMETER",True)
+    imu.DMP_enable_sensor("GYROSCOPE",True)
+    #imu.DMP_enable_sensor("RAW_ACCELEROMETER",True)
+    #imu.DMP_enable_sensor("RAW_GYROSCOPE",True)
+    #imu.DMP_enable_sensor("MAGNETIC_FIELD_UNCALIBRATED",True)
+    #imu.DMP_enable_sensor("GYROSCOPE_UNCALIBRATED",True)
+    #imu.DMP_enable_sensor("ACTIVITY_CLASSIFICATON",True)
+    #imu.DMP_enable_sensor("STEP_DETECTOR",True)
+    #imu.DMP_enable_sensor("STEP_COUNTER",True)
+    #imu.DMP_enable_sensor("GAME_ROTATION_VECTOR",True)
+    #imu.DMP_enable_sensor("ROTATION_VECTOR",True)
+    #imu.DMP_enable_sensor("GEOM_ROTATION_VECTOR",True)
+    #imu.DMP_enable_sensor("GEOM_FIELD",True)
+    #imu.DMP_enable_sensor("GRAVITY",True)
+    #imu.DMP_enable_sensor("LINEAR_ACCELERATION",True)
+    #imu.DMP_enable_sensor("ORIENTATION",True)
     
     while True:
-        i = imu.DMP_fifo_count()
-        if i > 0 :
-            imu.DMP_fifo_read(i)
+        imu.DMP_fifo_read()
         sleep_ms(10)
