@@ -3,7 +3,7 @@ from math import asin, atan2, degrees, radians, sqrt
 from utime import sleep_ms, sleep_us, ticks_ms, ticks_us, ticks_diff
 
 LIBNAME = "ICM20948"
-LIBVERSION = "0.9"
+LIBVERSION = "0.9-1"
 
 # This micropython library drive the TDK ICM20948 9 axis sensors
 # It can work :
@@ -1141,7 +1141,6 @@ class ICM20948:
     #Configure Digital Motion Processor
     def DMP_config(self):
         #Start configuring the slaves
-        self._dbg("====================Configuring Slaves============================")
         self.bank(3)
         #SLV0 will read only 10 byte AK09916 RSV register
         #We will read only so SLV0_ADDR requires (ICM_I2C_SLV_ADDR_RNW)
@@ -1326,7 +1325,7 @@ class ICM20948:
         fcount = self.DMP_fifo_count()
         if(fcount == 0) :
             return
-        self._dbg("Processing FIFO containing {:.0f} bytes".format(fcount))
+        #self._dbg("Processing FIFO {:.0f} bytes".format(fcount))
         #Read Header
         if (fcount < DMP_Header_Bytes) :
             return
@@ -1335,11 +1334,11 @@ class ICM20948:
             data = self.read(ICM_FIFO_R_W)
             header |= data << (8 - (i * 8))
         fcount -= DMP_Header_Bytes  #Decrease of Header size
-        self._dbg("\tHeader is",hex(header))
+        #self._dbg("\tHeader is",hex(header))
         #Read Header2
         header2 = 0
         if (header & DMP_DO_Ctrl_1_Header2) != 0 : #Check if header contains header 2 bit
-            self._dbg("\tHeader_2 detected")
+            #self._dbg("\tHeader_2 detected")
             if (fcount < DMP_header2_Bytes) : #Check FIFO has enough data, read again if not
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_header2_Bytes) :
@@ -1352,7 +1351,6 @@ class ICM20948:
         #Check bit per bit header in order
         #Acceleration
         if (header & DMP_DO_Ctrl_1_Accel) != 0 :
-            self._dbg("Processing FIFO acceleration data")
             if (fcount < DMP_Raw_Accel_Bytes) :
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Raw_Accel_Bytes) :
@@ -1365,12 +1363,11 @@ class ICM20948:
             ax *= self._acc_s #adjust result with sensiticity
             ay *= self._acc_s
             az *= self._acc_s
-            self._dbg("\tax", ax,"\tay",ay, "\taz",az)
+            self._dbg("FIFO Acceleration\tax {:.4f}\tay {:.4f}\taz {:.4f}".format(ax,ay,az))
             fcount -= DMP_Raw_Accel_Bytes  #Decrease of Acc
             
         #Gyroscope
         if (header & DMP_DO_Ctrl_1_Gyro) != 0 :
-            self._dbg("Processing FIFO gyroscope data")
             if (fcount < (DMP_Raw_Gyro_Bytes + DMP_Gyro_Bias_Bytes)) :
                 fcount = self.DMP_fifo_count()
             if (fcount < (DMP_Raw_Gyro_Bytes + DMP_Gyro_Bias_Bytes)) :
@@ -1383,13 +1380,12 @@ class ICM20948:
             gx *= self._gyro_s #adjust result with sensiticity
             gy *= self._gyro_s
             gz *= self._gyro_s
-            self._dbg("\tgx", gx,"\tgy",gy, "\tgz",gz)
-            self._dbg("Fifo gyroscope bias gbx", gbx,"\tgby",gby, "\tgbz",gbz)
+            self._dbg("FIFO Gyroscope\t\tgx {:.4f}\tgy {:.4f}\tgz {:.4f}".format(gx,gy,gz))
+            self._dbg("FIFO Gyro Bias\t\tgbx {:.4f}\tgby {:.4f}\tgbz {:.4f}".format(gbx,gby,gbz))
             fcount -= DMP_Raw_Gyro_Bytes + DMP_Gyro_Bias_Bytes
             
         #Compass
         if (header & DMP_DO_Ctrl_1_Compass) != 0 :
-            self._dbg("Processing FIFO Compass data")
             if (fcount < DMP_Compass_Bytes) :
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Compass_Bytes) :
@@ -1400,24 +1396,22 @@ class ICM20948:
                 data_ordered[DMP_Pedom_Quat6_Byte_Ordering[i]]=data[i]
             mx,my,mz = unpack_from(">3h", data_ordered)
             #No need to adjust sensitivity already included in mount matrix configuration
-            self._dbg("\tmx", mx,"\tmy",my, "\tmz",mz)
+            self._dbg("FIFO Compass\t\tmx {:.4f}\tmy {:.4f}\tmz {:.4f}".format(mx,my,mz))
             fcount -= DMP_Compass_Bytes
             
         #ALS
         if (header & DMP_DO_Ctrl_1_ALS) != 0 :
-            self._dbg("Processing FIFO ALS data")
             if (fcount < DMP_ALS_Bytes) :
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_ALS_Bytes) :
                 return
             data = self.read_bytes(ICM_FIFO_R_W, DMP_ALS_Bytes)
             #To do process
-            self._dbg("Fifo ALS", data)
+            self._dbg("FIFO ALS", data)
             fcount -= DMP_ALS_Bytes
 
         #Quaternion 6
         if (header & DMP_DO_Ctrl_1_Quat6) != 0 :
-            self._dbg("Processing FIFO Quaternion 6 data")
             if (fcount < DMP_Quat6_Bytes) :
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Quat6_Bytes) :
@@ -1431,12 +1425,11 @@ class ICM20948:
             q2 /= 2**30
             q3 /= 2**30
             #To do process
-            self._dbg("\tq1", q1,"\tq2", q2, "\tq3", q3)
+            self._dbg("FIFO Quaternion_6\tq1 {:.4f}\tq2 {:.4f}\tq3 {:.4f}".format(q1,q2,q3))
             fcount -= DMP_Quat6_Bytes
             
         #Quaternion 9
         if (header & DMP_DO_Ctrl_1_Quat9) != 0 :
-            self._dbg("Processing FIFO Quaternion 9")
             if (fcount < DMP_Quat9_Bytes) :
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Quat9_Bytes) :
@@ -1449,12 +1442,11 @@ class ICM20948:
             q1 /= 2**30  # The quaternion data is scaled by 2^30.
             q2 /= 2**30
             q3 /= 2**30
-            self._dbg("\tq1", q1,"\tq2", q2, "\tq3", q3, "\taccuracy", acc)
+            self._dbg("FIFO Quaternion_9\tq1 {:.4f}\tq2 {:.4f}\tq3 {:.4f}\taccuracy {:.4f}".format(q1,q2,q3,acc))
             fcount -= DMP_Quat9_Bytes
             
         #PQuaternion 6
         if (header & DMP_DO_Ctrl_1_Pedom_Quat6) != 0 :
-            self._dbg("Processing FIFO PQuaternion 6")
             if (fcount < DMP_Pedom_Quat6_Bytes) :
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Pedom_Quat6_Bytes) :
@@ -1468,12 +1460,11 @@ class ICM20948:
             q2 /= 2**30
             q3 /= 2**30
             #To do process
-            self._dbg("\tq1", q1,"\tq2", q2, "\tq3", q3)
+            self._dbg("FIFO PQuaternion_6\tq1 {:.4f}\tq2 {:.4f}\tq3 {:.4f}".format(q1,q2,q3))
             fcount -= DMP_Pedom_Quat6_Bytes
 
         #Geomag
         if (header & DMP_DO_Ctrl_1_Geomag) != 0 :
-            self._dbg("Processing FIFO Geomag")
             if (fcount < DMP_Geomag_Bytes) :
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Geomag_Bytes) :
@@ -1486,12 +1477,11 @@ class ICM20948:
             q1 /= 2**30  # The quaternion data is scaled by 2^30.
             q2 /= 2**30
             q3 /= 2**30
-            self._dbg("\tq1", q1,"\tq2", q2, "\tq3", q3, "\accuracy", acc)
+            self._dbg("FIFO Geomag\tq1 {:.4f}\tq2 {:.4f}\tq3 {:.4f}\taccuracy {:.4f}".format(q1,q2,q3,acc))
             fcount -= DMP_Geomag_Bytes
             
         #Pressure
         if (header & DMP_DO_Ctrl_1_Pressure) != 0 :
-            self._dbg("Processing FIFO Pressure & Temperature")
             if (fcount < DMP_Pressure_Bytes) :
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Pressure_Bytes) :
@@ -1499,128 +1489,120 @@ class ICM20948:
             data = self.read_bytes(ICM_FIFO_R_W, DMP_Pressure_Bytes)
             press = data[0] | (data[1] << 8) | (data[2] << 16)
             temp = data[3] | (data[4] << 8) | (data[5] << 16)
-            self._dbg("\tPress", press, "\tTemp",temp)
+            self._dbg("FIFO Press&Temp\tPress", press, "\tTemp",temp)
+            self._dbg("FIFO Press&Temp\tPress {:.1f}\tTemp {:.1f}".format(press,temp))
             fcount -= DMP_Pressure_Bytes
             
         #Gyro calibration 
         if (header & DMP_DO_Ctrl_1_Gyro_Calibr) != 0 :
-            self._dbg("Skipping FIFO Gyro Calibration")
             if (fcount < DMP_Gyro_Calibr_Bytes) :
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Gyro_Calibr_Bytes) :
                 return
             data = self.read_bytes(ICM_FIFO_R_W, DMP_Gyro_Calibr_Bytes)
             #To do process
+            self._dbg("FIFO Gyro Calibration : Skipped...")
             fcount -= DMP_Gyro_Calibr_Bytes
             
         #Compass calibration 
         if (header & DMP_DO_Ctrl_1_Compass_Calibr) != 0 :
-            self._dbg("Processing FIFO Compass Calibration")
             if (fcount < DMP_Compass_Calibr_Bytes) :
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Compass_Calibr_Bytes) :
                 return
             data = self.read_bytes(ICM_FIFO_R_W, DMP_Compass_Calibr_Bytes)
             #To do process
-            self._dbg("Fifo Compass calibration", data)
+            self._dbg("FICO Compass Calibration", data)
             fcount -= DMP_Compass_Calibr_Bytes
             
         #Steps
         if (header & DMP_DO_Ctrl_1_Step_Detector) != 0 :
-            self._dbg("Processing FIFO Step Detector")
             if (fcount < DMP_Step_Detector_Bytes) :
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Step_Detector_Bytes) :
                 return
             data = self.read_bytes(ICM_FIFO_R_W, DMP_Step_Detector_Bytes)
             #To do process
-            self._dbg("Fifo step detector data", data)
+            self._dbg("FIFO Step Detector", data)
             fcount -= DMP_Step_Detector_Bytes
             
         #Check bit per bit header2
             
         #Accelerometer Accuracy
         if (header2 & DMP_DO_Ctrl_2_Accel_Accuracy) != 0 :
-            self._dbg("Processing FIFO Accel Accuracy")
             if (fcount < DMP_Accel_Accuracy_Bytes) :
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Accel_Accuracy_Bytes) :
                 return
             data = self.read_bytes(ICM_FIFO_R_W, DMP_Accel_Accuracy_Bytes)
             #To do process
-            self._dbg("Fifo Accel Accuracy data", data)
+            self._dbg("FIFO Accel Accuracy", data)
             fcount -= DMP_Accel_Accuracy_Bytes
             
         #Gyro Accuracy
         if (header2 & DMP_DO_Ctrl_2_Gyro_Accuracy) != 0 :
-            self._dbg("Processing FIFO Accel Accuracy")
             if (fcount < DMP_Gyro_Accuracy_Bytes) :
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Gyro_Accuracy_Bytes) :
                 return
             data = self.read_bytes(ICM_FIFO_R_W, DMP_Gyro_Accuracy_Bytes)
             #To do process
-            self._dbg("Fifo Accel Accuracy data", data)
+            self._dbg("FIFO Cyro Accuracy", data)
             fcount -= DMP_Gyro_Accuracy_Bytes
             
         #Compass Accuracy
         if (header2 & DMP_DO_Ctrl_2_Compass_Accuracy) != 0 :
-            self._dbg("Processing FIFO Compass Accuracy")
             if (fcount < DMP_Compass_Accuracy_Bytes) :
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Compass_Accuracy_Bytes) :
                 return
             data = self.read_bytes(ICM_FIFO_R_W, DMP_Compass_Accuracy_Bytes)
             #To do process
-            self._dbg("Fifo Compass Accuracy data", data)
+            self._dbg("FIFO Compass Accuracy", data)
             fcount -= DMP_Compass_Accuracy_Bytes
             
         #Fsynch Detection
         if (header2 & DMP_DO_Ctrl_2_Fsync) != 0 :
-            self._dbg("Processing FIFO Fsynch Detection")
             if (fcount < DMP_Fsync_Detection_Bytes) :
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Fsync_Detection_Bytes) :
                 return
             data = self.read_bytes(ICM_FIFO_R_W, DMP_Fsync_Detection_Bytes)
             #To do process
-            self._dbg("Fifo Fsynch Detection data", data)
+            self._dbg("FIFO FSynch Detection", data)
             fcount -= DMP_Fsync_Detection_Bytes
             
         #Pickup
         if (header2 & DMP_DO_Ctrl_2_Pickup) != 0 :
-            self._dbg("Processing FIFO Pickup")
             if (fcount < DMP_Pickup_Bytes) :
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Pickup_Bytes) :
                 return
             data = self.read_bytes(ICM_FIFO_R_W, DMP_Pickup_Bytes)
             #To do process
-            self._dbg("Fifo Pickup data", data)
+            self._dbg("FIFO Pickup", data)
             fcount -= DMP_Pickup_Bytes
             
         #Activity recog
         if (header2 & DMP_DO_Ctrl_2_Activity_Recog) != 0 :
-            self._dbg("Processing FIFO ACtivity Recognition")
             if (fcount < DMP_Activity_Recognition_Bytes) :
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Activity_Recognition_Bytes) :
                 return
             data = self.read_bytes(ICM_FIFO_R_W, DMP_Activity_Recognition_Bytes)
             #To do process
-            self._dbg("Fifo Pickup data", data)
+            self._dbg("FIFO Activity Recog.", data)
             fcount -= DMP_Activity_Recognition_Bytes
             
         #Secondary On Off
         if (header2 & DMP_DO_Ctrl_2_Secondary_On_Off) != 0 :
-            self._dbg("Processing FIFO Secondary On Off")
             if (fcount < DMP_Secondary_On_Off_Bytes) :
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Secondary_On_Off_Bytes) :
                 return
             data = self.read_bytes(ICM_FIFO_R_W, DMP_Secondary_On_Off_Bytes)
             #To do process
-            self._dbg("Fifo Secondary On Off data", data)
+            self._dbg("FIFO Secondary On-Off", data)
             fcount -= DMP_Secondary_On_Off_Bytes
             
         #Finally process the footer
@@ -1632,7 +1614,7 @@ class ICM20948:
         for i in range(DMP_Footer_Bytes) :  #Read header (2 Bytes)
             data = self.read(ICM_FIFO_R_W)
             footer |= data << (8 - (i * 8))
-        self._dbg("Footer : Gyro count", footer)    
+        #self._dbg("FIFO Gyro Count", footer)    
         fcount -= DMP_Footer_Bytes 
 
     #Write to DMP register       
@@ -1665,7 +1647,6 @@ class ICM20948:
     def DMP_enable_sensor(self, icm_sensor, enable=True):
         #Convert strind ICM_sensor to android_sensor number
         android_sensor = DMP_SENSORS_2_ANDROID[DMP_SENSORS[icm_sensor]]
-        self._dbg("ICM Sensor", icm_sensor, enable, "ie Nb", DMP_SENSORS[icm_sensor], "ie Android", DMP_SENSORS_2_ANDROID[DMP_SENSORS[icm_sensor]])
         #Get Android Control Bits
         android_ctl_bits = ANDROID_SENSORS_CTRL_BITS[android_sensor]
         self._dbg("Activation ICM sensor",icm_sensor, "- Android CTRL Bits", hex(android_ctl_bits))
@@ -1682,7 +1663,7 @@ class ICM20948:
                 self._android_sensor_bitmask_1 |= _bitmask
             else :
                 self._android_sensor_bitmask_1 &= ~_bitmask
-        self._dbg("Android Sensor bitmask", self._android_sensor_bitmask_0, self._android_sensor_bitmask_1)        
+        #self._dbg("Android Sensor bitmask", self._android_sensor_bitmask_0, self._android_sensor_bitmask_1)        
         #Reconstruc DATA_OUT_CTL1 from _android_sensor_bitmask_0 & 1
         _data_out_ctl = 0
         _data_out_ctl2 = 0
@@ -1723,10 +1704,10 @@ class ICM20948:
             _inv_event_ctl |= DMP_Motion_Event_Control_Pedometer_Interrupt
 
         #Debugging Step
-        self._dbg("DATA_OUT_CTRL1", hex(_data_out_ctl))
-        self._dbg("DATA_OUT_CTRL2", hex(_data_out_ctl2))
-        self._dbg("DATA_RDY_STATUS", hex(_data_rdy_status))
-        self._dbg("INV_EVENT_CTRL", hex(_inv_event_ctl))
+        #self._dbg("DATA_OUT_CTRL1", hex(_data_out_ctl))
+        #self._dbg("DATA_OUT_CTRL2", hex(_data_out_ctl2))
+        #self._dbg("DATA_RDY_STATUS", hex(_data_rdy_status))
+        #self._dbg("INV_EVENT_CTRL", hex(_inv_event_ctl))
         #Make sure the chip is not in Low Power mode nor in Sleep mode
         self.reg_config(ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_SLEEP, enable=False)
         self.reg_config(ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_LP, enable=False)
@@ -1798,7 +1779,7 @@ class ICM20948:
         self.bank(1)
         pll = self.read_bytes(ICM_TIMEBASE_CORRECTION_PLL)[0]
         self._gyro_sf_pll = pll
-        self._dbg("PLL", pll)
+        #self._dbg("PLL", pll)
         
         MagicConstant = 264446880937391
         MagicConstantScale = 100000
@@ -1809,9 +1790,7 @@ class ICM20948:
             result = MagicConstant * (0x01 << gyro_level) * (1 + div) / (1270 + pll) / MagicConstantScale
     
         self._gyro_sf = int(result)
-    
-        self._dbg("SET_GYRO_FS PLL", pll, "DMP_GYRO_FS", self._gyro_sf)
-        
+        #self._dbg("SET_GYRO_FS PLL", pll, "DMP_GYRO_FS", self._gyro_sf)
         self._buffer_n = bytearray(4)
         self._buffer_n[0] = self._gyro_sf >> 24
         self._buffer_n[1] = self._gyro_sf >> 16
@@ -2043,4 +2022,3 @@ class ICM20948:
         Pan = degrees(atan2(t3, t4))
 
         return (Roll, Tilt, Pan)
-        
