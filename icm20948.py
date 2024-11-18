@@ -3,7 +3,7 @@ from math import asin, atan2, degrees, radians, sqrt
 from utime import sleep_ms, sleep_us, ticks_ms, ticks_us, ticks_diff
 
 LIBNAME = "ICM20948"
-LIBVERSION = "0.9-1"
+LIBVERSION = "0.9-2"
 
 # This micropython library drive the TDK ICM20948 9 axis sensors
 # It can work :
@@ -700,7 +700,7 @@ class ICM20948:
 
         #Set I2C Master Clock
         self.bank(3)
-        self.write(ICM_I2C_MST_CTRL, 0x07)  #0b0100 1101 = I2C MSTR CLOCK = 07 = 345,6kHz
+        self.write(ICM_I2C_MST_CTRL, 0x07)  #I2C MSTR CLOCK = 07 = 345,6kHz
         self.write(ICM_I2C_MST_DELAY_CTRL, 0x01)  #I2C_SLV1_DELAY_EN
 
         #Check if we cas access Magnetometer
@@ -1024,7 +1024,7 @@ class ICM20948:
         user = self.read(ICM_USER_CTRL)
         self.write(ICM_USER_CTRL, user | ICM_USER_CTRL_I2C_MST_EN) 
         self.bank(3)
-        self.write(ICM_I2C_MST_CTRL, 0x04)  #0b0100 1101 = I2C MSTR CLOCK = 07 = 68,75Hz
+        self.write(ICM_I2C_MST_CTRL, 0x07)  #I2C MSTR CLOCK = 07 = 345,6 kHz
         sleep_ms(5)
                
     #Reset I2C Master
@@ -1310,7 +1310,7 @@ class ICM20948:
         #Finally Turn On FIFO and DMP
         self.reg_config(ICM_USER_CTRL, ICM_USER_CTRL_DMP_EN, True)
         self.reg_config(ICM_USER_CTRL, ICM_USER_CTRL_FIFO_EN, True)
-        
+                
         
     #Read fifo count
     def DMP_fifo_count(self):
@@ -1325,7 +1325,7 @@ class ICM20948:
         fcount = self.DMP_fifo_count()
         if(fcount == 0) :
             return
-        #self._dbg("Processing FIFO {:.0f} bytes".format(fcount))
+        self._dbg("Processing FIFO {:.0f} bytes".format(fcount))
         #Read Header
         if (fcount < DMP_Header_Bytes) :
             return
@@ -1474,7 +1474,7 @@ class ICM20948:
             for i in range(DMP_Geomag_Bytes) :
                 data_ordered[DMP_Quat9_Byte_Ordering[i]]=data[i]
             q1,q2,q3,acc = unpack_from(">3lh", data_ordered)
-            q1 /= 2**30  # The quaternion data is scaled by 2^30.
+            q1 /= 2**30  # To check Ludovic
             q2 /= 2**30
             q3 /= 2**30
             self._dbg("FIFO Geomag\tq1 {:.4f}\tq2 {:.4f}\tq3 {:.4f}\taccuracy {:.4f}".format(q1,q2,q3,acc))
@@ -1511,8 +1511,14 @@ class ICM20948:
             if (fcount < DMP_Compass_Calibr_Bytes) :
                 return
             data = self.read_bytes(ICM_FIFO_R_W, DMP_Compass_Calibr_Bytes)
-            #To do process
-            self._dbg("FICO Compass Calibration", data)
+            data_ordered = data
+            for i in range(DMP_Compass_Calibr_Bytes) :
+                data_ordered[DMP_Quat6_Byte_Ordering[i]]=data[i]
+            q1,q2,q3 = unpack_from(">3l", data_ordered)
+            q1 /= 2**30  # To check Ludovic
+            q2 /= 2**30
+            q3 /= 2**30
+            self._dbg("FICO Compass Calibration\tq1 {:.4f}\tq2 {:.4f}\tq3 {:.4f}".format(q1,q2,q3))
             fcount -= DMP_Compass_Calibr_Bytes
             
         #Steps
@@ -1522,8 +1528,9 @@ class ICM20948:
             if (fcount < DMP_Step_Detector_Bytes) :
                 return
             data = self.read_bytes(ICM_FIFO_R_W, DMP_Step_Detector_Bytes)
+            steps = data[0]<<24 | data[1]<<16 | data[2] << 8 | data[3] # MSB first
             #To do process
-            self._dbg("FIFO Step Detector", data)
+            self._dbg("FIFO Step Detector", steps)
             fcount -= DMP_Step_Detector_Bytes
             
         #Check bit per bit header2
@@ -1535,8 +1542,8 @@ class ICM20948:
             if (fcount < DMP_Accel_Accuracy_Bytes) :
                 return
             data = self.read_bytes(ICM_FIFO_R_W, DMP_Accel_Accuracy_Bytes)
-            #To do process
-            self._dbg("FIFO Accel Accuracy", data)
+            accuracy = data[0]<<8 | data[1]
+            self._dbg("FIFO Accel Accuracy", accuracy)
             fcount -= DMP_Accel_Accuracy_Bytes
             
         #Gyro Accuracy
@@ -1546,8 +1553,8 @@ class ICM20948:
             if (fcount < DMP_Gyro_Accuracy_Bytes) :
                 return
             data = self.read_bytes(ICM_FIFO_R_W, DMP_Gyro_Accuracy_Bytes)
-            #To do process
-            self._dbg("FIFO Cyro Accuracy", data)
+            accuracy = data[0]<<8 | data[1]
+            self._dbg("FIFO Cyro Accuracy", accuracy)
             fcount -= DMP_Gyro_Accuracy_Bytes
             
         #Compass Accuracy
@@ -1557,8 +1564,8 @@ class ICM20948:
             if (fcount < DMP_Compass_Accuracy_Bytes) :
                 return
             data = self.read_bytes(ICM_FIFO_R_W, DMP_Compass_Accuracy_Bytes)
-            #To do process
-            self._dbg("FIFO Compass Accuracy", data)
+            accuracy = data[0]<<8 | data[1]
+            self._dbg("FIFO Compass Accuracy", accuracy)
             fcount -= DMP_Compass_Accuracy_Bytes
             
         #Fsynch Detection
@@ -1568,8 +1575,9 @@ class ICM20948:
             if (fcount < DMP_Fsync_Detection_Bytes) :
                 return
             data = self.read_bytes(ICM_FIFO_R_W, DMP_Fsync_Detection_Bytes)
+            fsynch = data[0]<<8 | data[1]
             #To do process
-            self._dbg("FIFO FSynch Detection", data)
+            self._dbg("FIFO FSynch Detection", fsynch)
             fcount -= DMP_Fsync_Detection_Bytes
             
         #Pickup
@@ -1579,8 +1587,8 @@ class ICM20948:
             if (fcount < DMP_Pickup_Bytes) :
                 return
             data = self.read_bytes(ICM_FIFO_R_W, DMP_Pickup_Bytes)
-            #To do process
-            self._dbg("FIFO Pickup", data)
+            pickup = data[0]<<8 | data[1]
+            self._dbg("FIFO Pickup", pickup)
             fcount -= DMP_Pickup_Bytes
             
         #Activity recog
