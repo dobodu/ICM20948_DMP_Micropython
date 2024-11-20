@@ -8,7 +8,7 @@ I2C0_SDA = Pin(06)          #  I2C SCA
     
 i2c0 = I2C(0, sda=I2C0_SDA, scl=I2C0_SCL, freq = 400_000)
 
-imu = icm20948.ICM20948(i2c0, dmp = False, debug=True)
+imu = icm20948.ICM20948(i2c0, dmp = True, debug=True)
 
 if not imu.dmp_ready :
     
@@ -36,10 +36,10 @@ else :
     imu.DMP_config()
         
     #imu.DMP_enable_sensor("ACCELEROMETER",True)
-    imu.DMP_enable_sensor("GYROSCOPE",True)
+    #imu.DMP_enable_sensor("GYROSCOPE",True)
     #imu.DMP_enable_sensor("RAW_ACCELEROMETER",True)
     #imu.DMP_enable_sensor("RAW_GYROSCOPE",True)
-    #imu.DMP_enable_sensor("MAGNETIC_FIELD_UNCALIBRATED",True)
+    imu.DMP_enable_sensor("MAGNETIC_FIELD_UNCALIBRATED",True)
     #imu.DMP_enable_sensor("GYROSCOPE_UNCALIBRATED",True)
     #imu.DMP_enable_sensor("ACTIVITY_CLASSIFICATON",True)
     #imu.DMP_enable_sensor("STEP_DETECTOR",True)
