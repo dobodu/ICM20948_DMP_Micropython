@@ -3,7 +3,7 @@ from math import asin, atan2, degrees, radians, sqrt
 from utime import sleep_ms, sleep_us, ticks_ms, ticks_us, ticks_diff
 
 LIBNAME = "ICM20948"
-LIBVERSION = "0.9-2"
+LIBVERSION = "0.9-3"
 
 # This micropython library drive the TDK ICM20948 9 axis sensors
 # It can work :
@@ -238,7 +238,6 @@ AK_HXL = 0x11
 AK_ST2 = 0x18
 AK_ST2_HOFL = 0b00001000   	# Magnetic sensor overflow bit
 AK_CNTL2 = 0x31
-AK_CNTL2_MODE = 0b00001111
 AK_CNTL2_MODE_OFF = 0
 AK_CNTL2_MODE_SINGLE = 1
 AK_CNTL2_MODE_10HZ  = 2
@@ -694,10 +693,6 @@ class ICM20948:
         
         self.set_temp_low_pass(enabled=True, mode=1)
 
-        #Configure Interruption PIN     
-        self.bank(0)
-        self.write(ICM_INT_PIN_CFG, ICM_INT_PIN_CFG_LATCH__EN | ICM_INT_PIN_CFG_ANYRD_2CLEAR)
-
         #Set I2C Master Clock
         self.bank(3)
         self.write(ICM_I2C_MST_CTRL, 0x07)  #I2C MSTR CLOCK = 07 = 345,6kHz
@@ -929,7 +924,6 @@ class ICM20948:
             gz -= self._gyrbias[2]
         return gx, gy, gz
     
-    #Essais Ludo
     #Read magnetometer data straight for slave D0 register (fast)
     def mag(self):
         self.bank(0)
@@ -1143,7 +1137,7 @@ class ICM20948:
         #Start configuring the slaves
         self.bank(3)
         #SLV0 will read only 10 byte AK09916 RSV register
-        #We will read only so SLV0_ADDR requires (ICM_I2C_SLV_ADDR_RNW)
+        #We will read only so SLV0_ADDR requires (ICM_I2C_SLV_ADDR_RNW) and ICM_I2C_SLV1_DO is not required
         #Reserved data is in Big Indian so l'est swap byte (ICM_I2C_SLV_CTRL_BYTE_SWAP)
         #Data are in group of 2 bytes so let's group them (ICM_I2C_SLV_CTRL_REG_GROUP)
         #We also need to enable (ICM_I2C_SLV_CTRL_SLV_ENABLE) and ask for 10 bytes reading
@@ -1153,17 +1147,18 @@ class ICM20948:
         
         #SLV1 will do single measurement
         #We will write so SLV1_ADD has NO NEED of (ICM_I2C_SLV_ADDR_RNW)
-        #We ask for single measure so SLV1_DO needs (AK_CNTL2_MODE_SINGLE)
+        #We ask for single measure so we need to write SLV1_DO : AK_CNTL2_MODE_SINGLE
         #No need of grouped, big indian or whater,
         #Only need to enable (ICM_I2C_SLV_CTRL_SLV_ENABLE) and put 1 byte order (1)
         self.write(ICM_I2C_SLV1_ADDR, AK_I2C_ADDR)
         self.write(ICM_I2C_SLV1_DO, AK_CNTL2_MODE_SINGLE)
-        self.write(ICM_I2C_SLV1_REG, AK_I2C_ADDR)
+        self.write(ICM_I2C_SLV1_REG, AK_CNTL2)
         self.write(ICM_I2C_SLV1_CTRL, 1 | ICM_I2C_SLV_CTRL_SLV_ENABLE)
         
         #Configure ODR to 68,75 Hz = 1100/2**4
         self.bank(3)
         self.write(ICM_I2C_MST_ODR_CONFIG, 0x04)
+        #self.write(ICM_I2C_MST_DELAY_CTRL, 0x03)  #I2C_SLV0 and 1_DELAY_EN
                     
         #Configure clock source and enable all sensors all axis
         self.bank(0)
@@ -1190,7 +1185,7 @@ class ICM20948:
         self.write(ICM_FIFO_EN_2, 0x00)
         
         #Turn Off data ready interrupt
-        self.write(ICM_INT_ENABLE_1,0x00)
+        self.reg_config(ICM_INT_ENABLE_1,0x1,False)
        
         #Reset the FIFO (see ICM_20948_reset_FIFO)
         self.write(ICM_FIFO_RST,0x1F)
@@ -1310,7 +1305,7 @@ class ICM20948:
         #Finally Turn On FIFO and DMP
         self.reg_config(ICM_USER_CTRL, ICM_USER_CTRL_DMP_EN, True)
         self.reg_config(ICM_USER_CTRL, ICM_USER_CTRL_FIFO_EN, True)
-                
+        
         
     #Read fifo count
     def DMP_fifo_count(self):
@@ -1474,7 +1469,7 @@ class ICM20948:
             for i in range(DMP_Geomag_Bytes) :
                 data_ordered[DMP_Quat9_Byte_Ordering[i]]=data[i]
             q1,q2,q3,acc = unpack_from(">3lh", data_ordered)
-            q1 /= 2**30  # To check Ludovic
+            q1 /= 2**30  # To check
             q2 /= 2**30
             q3 /= 2**30
             self._dbg("FIFO Geomag\tq1 {:.4f}\tq2 {:.4f}\tq3 {:.4f}\taccuracy {:.4f}".format(q1,q2,q3,acc))
@@ -1515,7 +1510,7 @@ class ICM20948:
             for i in range(DMP_Compass_Calibr_Bytes) :
                 data_ordered[DMP_Quat6_Byte_Ordering[i]]=data[i]
             q1,q2,q3 = unpack_from(">3l", data_ordered)
-            q1 /= 2**30  # To check Ludovic
+            q1 /= 2**30  # To check
             q2 /= 2**30
             q3 /= 2**30
             self._dbg("FICO Compass Calibration\tq1 {:.4f}\tq2 {:.4f}\tq3 {:.4f}".format(q1,q2,q3))
@@ -1796,8 +1791,12 @@ class ICM20948:
             result =  MagicConstant * (0x01 << gyro_level) * (1 + div) / (1270 - (pll & 0x7F)) / MagicConstantScale
         else :
             result = MagicConstant * (0x01 << gyro_level) * (1 + div) / (1270 + pll) / MagicConstantScale
-    
-        self._gyro_sf = int(result)
+
+        if (result > 0x7FFFFFFF) :
+            self._gyro_sf = 0x7FFFFFFF
+        else :
+            self._gyro_sf = int(result)
+            
         #self._dbg("SET_GYRO_FS PLL", pll, "DMP_GYRO_FS", self._gyro_sf)
         self._buffer_n = bytearray(4)
         self._buffer_n[0] = self._gyro_sf >> 24
