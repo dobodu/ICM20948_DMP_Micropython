@@ -3,7 +3,7 @@ from math import asin, atan2, degrees, radians, sqrt
 from utime import sleep_ms, sleep_us, ticks_ms, ticks_us, ticks_diff
 
 LIBNAME = "ICM20948"
-LIBVERSION = "0.9-4"
+LIBVERSION = "0.9-5"
 
 # This micropython library drive the TDK ICM20948 9 axis sensors
 # It can work :
@@ -136,7 +136,9 @@ ICM_DELAY_TIME_H = 0x28
 ICM_ACCEL_XOUT_H = 0x2D
 ICM_GYRO_XOUT_H = 0x33
 ICM_TEMP_OUT_H = 0x39
-ICM_EXT_SLV_SENS_DATA_00 = 0x3B
+ICM_EXT_SLV_SENS_DATA_00 = 0x3B # Linked to AK_ST1 (ICM) or to AK_RSV2 (DMP)
+ICM_EXT_SLV_SENS_DATA_01 = 0x3C # Linked to AK_HXL
+ICM_EXT_SLV_SENS_DATA_08 = 0x43 # Linked to AK_ST2
 #Add other there if needed
 ICM_FIFO_EN_1 = 0x66
 ICM_FIFO_EN_2 = 0x67
@@ -230,7 +232,7 @@ AK_WIA1 = 0x00
 AK_WIA2 = 0x01
 AK_RSV1 = 0x02
 AK_RSV2 = 0x03 #Reserved register, used for DMP reading
-AK_HXH_RSV = 0x04 #Hidden Magnetometer Data in Big Indian Format
+AK_HXH_RSV = 0x04 # ? Hidden Magnetometer Data in Big Indian Format
 AK_ST1 = 0x10
 AK_ST1_DOR = 0b00000010   # Data overflow bit
 AK_ST1_DRDY = 0b00000001  # Data self.ready bit
@@ -643,9 +645,9 @@ class ICM20948:
         #Variables for ICM or DMP
         self._bank = -1
         self._membank = -1
-        self._buffer_1 = bytearray(1)
-        self._buffer_n = bytearray(1)
-        self._fifo_buffer = bytearray(2048)        
+        self._rw_buffer = bytearray(1)
+        self._buffer = bytearray(1)
+        self._fifo_buffer = bytearray(4096) # Chap 1.2 buffer is 4kB     
         self._android_sensor_bitmask_0 = 0
         self._android_sensor_bitmask_1 = 0
         self._dmp_data_out_ctl1 = 0
@@ -699,12 +701,13 @@ class ICM20948:
         else :
             self._dbg("CHIP ID NUMBER IS",hex(ICM_CHIP_ID))
 
-        #Configure Chip : Reset and set Gyro and Acc ON
+        #Reset the Chip 
         self.reg_config(0,ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_RESET, enable=True)
         sleep_ms(10)
-        #Set Clock Auto
+        #Set Clock Auto 
         self.write(0, ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_CLOCK_AUTO)
-        self.write(0, ICM_PWR_MGMT_2, 0x00)  #0x00 = ALL SENSOR ON
+        #Put all sensor On
+        self.write(0, ICM_PWR_MGMT_2, 0x00)
 
         #Configure scales, SR, LP and get sensitivity values
         #self.write(2, ICM_ODR_ALIGN_EN, 0x01) 
@@ -718,9 +721,8 @@ class ICM20948:
         
         self.set_temp_low_pass(enabled=True, mode=1)
 
-        #Set I2C Master Clock
+        #Configure I2C Master Clock
         self.write(3, ICM_I2C_MST_CTRL, 0x07)  #I2C MSTR CLOCK = 07 = 345,6kHz
-        self.write(3, ICM_I2C_MST_DELAY_CTRL, 0x01)  #I2C_SLV0_DELAY_EN
 
         #Check if we cas access Magnetometer
         if not self.mag_read(AK_WIA2) == AK_CHIP_ID:
@@ -729,8 +731,8 @@ class ICM20948:
         else :
             self._dbg("AK09916 Magnetometer Chip Found... ")
 
-        # Reset the magnetometer
-        self.I2C_master_slave_write(AK_CNTL3, AK_CNTL3_RESET)
+        # Reset the magnetometer through the slave 0
+        self.slave_write(AK_CNTL3, AK_CNTL3_RESET)
         while self.mag_read(AK_CNTL3) == 0x01: #LOOP UNTIL RESET BIT REMAINS
             sleep_us(100)
         self._dbg("AK09916 Magnetometer Chip Reseted... ")
@@ -879,14 +881,14 @@ class ICM20948:
     #Read the current IMU temperature
     def temp(self):
         # PWR_MGMT_1 defaults to leave temperature enabled
-        temp_raw_bytes = self.read_bytes(0, ICM_TEMP_OUT_H, 2)
+        temp_raw_bytes = self.read(0, ICM_TEMP_OUT_H, 2)
         temp_raw = struct.unpack('>h', bytearray(temp_raw_bytes))[0]
         temp_deg_c = ((temp_raw - ICM_ROOM_TEMP_OFFSET) / ICM_TEMPERATURE_SENSITIVITY) + ICM_TEMPERATURE_DEGREES_OFFSET
         return temp_deg_c
 
     #Read acceleration data
     def acc(self):
-        data = self.read_bytes(0,ICM_ACCEL_XOUT_H, 6)
+        data = self.read(0,ICM_ACCEL_XOUT_H, 6)
         ax, ay, az = unpack_from(">hhh", data)
         ax *= self._acc_s
         ay *= self._acc_s
@@ -899,7 +901,7 @@ class ICM20948:
     
     #Read gyroscope data
     def gyro(self):
-        data = self.read_bytes(0, ICM_GYRO_XOUT_H, 6)
+        data = self.read(0, ICM_GYRO_XOUT_H, 6)
         gx, gy, gz = unpack_from(">hhh", data)
         gx *= self._gyro_s
         gy *= self._gyro_s      
@@ -910,32 +912,9 @@ class ICM20948:
             gz -= self._gyrbias[2]
         return gx, gy, gz
     
-    #Read magnetometer data straight for slave D0 register (fast)
+    #Read magnetometer data straight for slave DATA_01 (linked to AK_HXL)
     def mag(self):
-        data = self.read_bytes(0, ICM_EXT_SLV_SENS_DATA_00, 8)
-        mx, my, mz = unpack_from("<hhh", data)
-        mx *= self._mag_s
-        my *= self._mag_s
-        mz *= self._mag_s
-        if self._magbias_en :
-            mx -= self._magbias[0]
-            my -= self._magbias[1]
-            mz -= self._magbias[2]
-        return mx, -my, -mz	#See orientation of AK9916 vs IMU20948
-
-    #Read magnetometer data (slow way)
-    def mag_slow(self):
-        self.I2C_master_slave_write(AK_CNTL2, AK_CNTL2_MODE_SINGLE)  # Trigger single measurement
-        t_start = ticks_ms()
-        #This loop is inefficient, mag_read has a delay of 5ms ==> Can lead to 50ms at least
-        #has to be written differently
-        while not (self.mag_read(AK_ST1) & 0x01 > 0) : #self.magnetometer_ready():
-            if ticks_ms() - t_start > 1000 :   # 1000 ms timeout
-                raise RuntimeError("Timeout waiting for Magnetometer Ready")
-            sleep_us(10)
-        data = self.mag_read_bytes(AK_HXL, 6)
-        # Read ST2 to confirm self.read finished, needed for continuous modes
-        # self.mag_read(AK_ST2)
+        data = self.read(0, ICM_EXT_SLV_SENS_DATA_01, 6)
         mx, my, mz = unpack_from("<hhh", data)
         mx *= self._mag_s
         my *= self._mag_s
@@ -951,8 +930,9 @@ class ICM20948:
     #Switch register bank
     def bank(self, value):
         if not self._bank == value:
-            self._buffer_1[0]=value << 4
-            self._bus.writeto_mem(self._addr, ICM_BANK_SEL, self._buffer_1)
+            self._rw_buffer = bytearray(1)
+            self._rw_buffer[0]=value << 4
+            self._bus.writeto_mem(self._addr, ICM_BANK_SEL, self._rw_buffer)
             self._bank = value
             #self._dbg("Setting Bank",hex(value))
             
@@ -972,8 +952,9 @@ class ICM20948:
     #Write single byte to the sensor
     def write(self, bank, reg, value):
         self.bank(bank)
-        self._buffer_1[0]=value
-        self._bus.writeto_mem(self._addr, reg, self._buffer_1)
+        self._rw_buffer = bytearray(1)
+        self._rw_buffer[0]=value
+        self._bus.writeto_mem(self._addr, reg, self._rw_buffer)
         #self._dbg("Writing Reg",hex(reg)," Value",bin(value))
         sleep_us(10)
 
@@ -983,64 +964,77 @@ class ICM20948:
         self._bus.writeto_mem(self._addr, reg, value)
         sleep_us(10)
 
-    #Read single byte from the sensor
-    def read(self, bank, reg):
+    #Read byte(s) from the ICM
+    def read(self, bank, reg, length=1):
         self.bank(bank)
-        self._bus.readfrom_mem_into(self._addr, reg , self._buffer_1)
-        return self._buffer_1[0]
-    
-    #Read byte(s) from the sensor
-    def read_bytes(self, bank, reg, length=1):
-        self.bank(bank)
-        self._buffer_n = bytearray (length)
-        self._bus.readfrom_mem_into(self._addr, reg , self._buffer_n)
-        return self._buffer_n
-
-    #Enable the I2C Master I/F module and then disable it
-    def trigger_mag_io(self):
-        user = self.read(0,ICM_USER_CTRL)
-        self.write(0, ICM_USER_CTRL, user | ICM_USER_CTRL_I2C_MST_EN)
-        sleep_ms(5)
-        self.write(0, ICM_USER_CTRL, user)
+        self._rw_buffer = bytearray(length)
+        self._bus.readfrom_mem_into(self._addr, reg , self._rw_buffer)
+        if length == 1 :
+            return self._rw_buffer[0]
+        else :
+            return self._rw_buffer
 
     #Write a byte to the slave magnetometer
-    def I2C_master_slave_write(self, reg, value):
-        self.write(3, ICM_I2C_SLV0_ADDR, AK_I2C_ADDR)
-        self.write(3, ICM_I2C_SLV0_REG, reg)
-        self.write(3, ICM_I2C_SLV0_DO, value)
-        self.trigger_mag_io()       
-
-    #To remove or to gather with I2C_master_setmag
-    def ICM_config(self):
-        
-        self.I2C_master_slave_write(AK_CNTL2, AK_CNTL2_MODE_100HZ)
-        self.write(3, ICM_I2C_SLV0_CTRL, ICM_I2C_SLV_CTRL_SLV_ENABLE | 8) # Enable SLV0 reading 8 bytes yte
-        self.write(3, ICM_I2C_SLV0_ADDR, AK_I2C_ADDR | ICM_I2C_SLV_ADDR_RNW)  # Transfer is READ
-        self.write(3, ICM_I2C_SLV0_REG, AK_HXL) #Read from register
-        
-        self.reg_config(0, ICM_USER_CTRL, ICM_USER_CTRL_I2C_MST_RST, enable=True)
-        self.reg_config(0,ICM_USER_CTRL, ICM_USER_CTRL_I2C_MST_EN, enable=True)
-        
-        self.write(3, ICM_I2C_MST_CTRL, 0x07)  #I2C MSTR CLOCK = 07 = 345,6 kHz
-        sleep_ms(5)
-
-    #Read a byte from the slave magnetometer
-    def mag_read(self, reg):
-        self.write(3, ICM_I2C_SLV0_CTRL, ICM_I2C_SLV_CTRL_SLV_ENABLE | 1) # 0x80 = I2C_SLV0_EN = Enable reading data, 1 = for 1 byte
-        self.write(3, ICM_I2C_SLV0_ADDR, AK_I2C_ADDR | ICM_I2C_SLV_ADDR_RNW)  #0x80 = Transfer is READ
-        self.write(3, ICM_I2C_SLV0_REG, reg) #Read from register
-        self.write(3, ICM_I2C_SLV0_DO, 0xFF) # Data out ?
-        self.trigger_mag_io()
-        return self.read(0, ICM_EXT_SLV_SENS_DATA_00) #Return value from Master I2C 
+    def slave_write(self, reg, value):
+        self.slave_config(0, AK_I2C_ADDR, reg, None , False, False, False, False, False, value)
 
     #Read up to 24 bytes from the slave magnetometer
-    def mag_read_bytes(self, reg, length=1):    
-        self.write(3, ICM_I2C_SLV0_CTRL, ICM_I2C_SLV_CTRL_SLV_ENABLE | 0x08 | length)  #0x80 = Enable reading data,  0x08 = Grouped by 2
-        self.write(3, ICM_I2C_SLV0_ADDR, AK_I2C_ADDR | ICM_I2C_SLV_ADDR_RNW) #0x80 = Transfer is READ
-        self.write(3, ICM_I2C_SLV0_REG, reg)
-        self.write(3, ICM_I2C_SLV0_DO, 0xFF)
-        self.trigger_mag_io()
-        return self.read_bytes(0,ICM_EXT_SLV_SENS_DATA_00, length) #Return value from Master I2C 
+    def mag_read(self, reg, length=1):
+        self.slave_config(0, AK_I2C_ADDR, reg, length, True, True, False, False, False)
+        res = self.read(0, ICM_EXT_SLV_SENS_DATA_00, length)
+        #self._dbg("Mag Read", res)
+        return res
+
+    #New write slave
+    def slave_config(self, slave, addr, reg, length, RnW, En, Swp, Dis, Grp, DO = None):
+        if (slave > 4) :
+            return
+        #Recalculate I2C_SLx_adress
+        i2c_slv_addr = ICM_I2C_SLV0_ADDR + 4 * slave
+        i2c_slv_reg = ICM_I2C_SLV0_REG + 4 * slave
+        i2c_slv_ctrl = ICM_I2C_SLV0_CTRL + 4 * slave
+        i2c_slv_do = ICM_I2C_SLV0_DO + 4 * slave
+        
+        slv_addr = addr
+        if RnW :
+            slv_addr = addr | ICM_I2C_SLV_ADDR_RNW
+        self.write(3, i2c_slv_addr, slv_addr)
+            
+        slv_reg = reg
+        self.write(3, i2c_slv_reg, slv_reg)
+
+        slv_ctrl = length
+        if slv_ctrl != None :    
+            if En :
+                slv_ctrl |= ICM_I2C_SLV_CTRL_SLV_ENABLE
+            if Swp :
+                slv_ctrl |= ICM_I2C_SLV_CTRL_BYTE_SWAP
+            if Dis :
+                slv_ctrl |= ICM_I2C_SLV_CTRL_REG_DIS
+            if Grp :
+                slv_ctrl |= ICM_I2C_SLV_CTRL_REG_GROUP
+            self.write(3, i2c_slv_ctrl, slv_ctrl)
+        else :
+            slv_ctrl = "None"
+        
+        if DO != None :
+            slv_do = DO
+            self.write(3, i2c_slv_do, DO)
+        else :
+            slv_do = "None"
+        
+        #self._dbg("Slave", 0, "Config Add", hex(slv_addr), "Reg", hex(slv_reg), "Ctrl", slv_ctrl, "DO", slv_do)
+
+        #Activate I2C Master so I2C_slave setup can be propagated to slave itself
+        self.reg_config(0, ICM_USER_CTRL, ICM_USER_CTRL_I2C_MST_EN, True)
+
+
+    #ICM Mag config when not using DMP
+    def ICM_config(self):
+        #Tell the slave magnetometer to tun 100Hz
+        self.slave_config(0, AK_I2C_ADDR, AK_CNTL2, None , False, False, False, False, False, AK_CNTL2_MODE_100HZ)
+        #Tell the slave to read from AK_ST1 to AK_ST2 (9 bytes) including magnetometer values AK_HXL 
+        self.slave_config(0, AK_I2C_ADDR, AK_ST1, 9, True, True, False, False, False)
 
     #Status
     @property
@@ -1107,48 +1101,39 @@ class ICM20948:
         
         #SLV0 will read only 10 byte AK09916 RSV register
         #We will read only so SLV0_ADDR requires (ICM_I2C_SLV_ADDR_RNW) and ICM_I2C_SLV1_DO is not required
-        #Reserved data is in Big Indian so l'est swap byte (ICM_I2C_SLV_CTRL_BYTE_SWAP)
+        #Reserved data is in Big Indian so let's swap byte (ICM_I2C_SLV_CTRL_BYTE_SWAP)
         #Data are in group of 2 bytes so let's group them (ICM_I2C_SLV_CTRL_REG_GROUP)
         #We also need to enable (ICM_I2C_SLV_CTRL_SLV_ENABLE) and ask for 10 bytes reading
-        self.write(3, ICM_I2C_SLV0_ADDR, AK_I2C_ADDR | ICM_I2C_SLV_ADDR_RNW)
-        self.write(3, ICM_I2C_SLV0_REG, AK_RSV2)
-        self.write(3, ICM_I2C_SLV0_CTRL, 10 | ICM_I2C_SLV_CTRL_SLV_ENABLE | ICM_I2C_SLV_CTRL_BYTE_SWAP | ICM_I2C_SLV_CTRL_REG_GROUP)
+        #Debugging cas ICM only we write
+        # self.slave_config(0, AK_I2C_ADDR, AK_HXL, 8, True, True, False, False, False)
+        #    slave_config(sl, addr,       reg, length, RnW,  En,   Swp,  Dis,   Grp, DO)
+        self.slave_config(0, AK_I2C_ADDR, AK_RSV2, 10, True, True, True, False, True)
         
-        #SLV1 will do single measurement
+        #SLV1 will be assigned to single measurement trigger 
         #We will write so SLV1_ADD has NO NEED of (ICM_I2C_SLV_ADDR_RNW)
         #We ask for single measure so we need to write SLV1_DO : AK_CNTL2_MODE_SINGLE
         #No need of grouped, big indian or whater,
         #Only need to enable (ICM_I2C_SLV_CTRL_SLV_ENABLE) and put 1 byte order (1)
-        self.write(3, ICM_I2C_SLV1_ADDR, AK_I2C_ADDR)
-        self.write(3, ICM_I2C_SLV1_DO, AK_CNTL2_MODE_SINGLE)
-        self.write(3, ICM_I2C_SLV1_REG, AK_CNTL2)
-        self.write(3, ICM_I2C_SLV1_CTRL, 1 | ICM_I2C_SLV_CTRL_SLV_ENABLE)
+        #Debugging cas ICM only we write
+        # self.slave_config(0, AK_I2C_ADDR, AK_CNTL2, None , False, False, False, False, False, AK_CNTL2_MODE_100HZ)
+        #    slave_config(sl, addr,       reg,      length, RnW,   En,   Swp,   Dis,   Grp,   DO)
+        self.slave_config(1, AK_I2C_ADDR, AK_CNTL2, 1,      False, True, False, False, False, AK_CNTL2_MODE_SINGLE)
         
         #Configure ODR to 68,75 Hz = 1100/2**4
         self.write(3, ICM_I2C_MST_ODR_CONFIG, 0x04)
         #self.write(3, ICM_I2C_MST_DELAY_CTRL, 0x03)  #I2C_SLV0 and 1_DELAY_EN
                     
-        #Configure clock source and enable all sensors all axis
+        #Configure clock source auto
         self.write(0, ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_CLOCK_AUTO)
+        #Enable all sensors all axis
         self.write(0, ICM_PWR_MGMT_2, 0x00)
         
         #Place I2C_master only in Low Power Mode
         self.reg_config(0, ICM_LP_CFG, ICM_LP_CFG_ACC | ICM_LP_CFG_GYRO , False)
         self.reg_config(0, ICM_LP_CFG, ICM_LP_CFG_MST, True)
 
-        #Essai Ludo faire reset I2C Master (marche pas)
-        #self.reg_config(0, ICM_USER_CTRL, ICM_USER_CTRL_I2C_MST_RST, enable=True)
-
         #Disable DMP and FIFO
         self.reg_config(0,ICM_USER_CTRL, ICM_USER_CTRL_DMP_EN | ICM_USER_CTRL_FIFO_EN , False)
-
-        #Set Gyro full scale range 2000 dps
-        self.set_gyro_full_scale(2000)
-        #Set Acc full scale range 4g
-        self.set_acc_full_scale(4)
-        #Enable Gyro DLPF
-        self.set_gyro_low_pass(True, mode=0)
-        
         #Turn Off whatever whould be configured as FIFO
         self.write(0, ICM_FIFO_EN_1, 0x00)
         self.write(0, ICM_FIFO_EN_2, 0x00)
@@ -1161,19 +1146,28 @@ class ICM20948:
         sleep_ms(50)
         self.write(0, ICM_FIFO_RST,0x1E)
         
+
+        #Set Gyro full scale range 2000 dps
+        self.set_gyro_full_scale(2000)
+        #Set Acc full scale range 4g
+        self.set_acc_full_scale(4)
+        #Enable Gyro DLPF
+        self.set_gyro_low_pass(True, mode=0)
+        
         #Set Accelerator Sample_rate 56.29 Hz
         self.set_acc_sample_rate(56.25)
         #Set Gyroscope Sample_rate 55Hz
         self.set_gyro_sample_rate(55)
         
+        
         #Upload DMP firmware
         self.DMP_load_firmware()
         
         #Write the 2 byte Firmware Start Value to ICM PRGM_STRT_ADDRH/PRGM_STRT_ADDRL
-        self._buffer_n = bytearray(2)
-        self._buffer_n[0] = DMP_START_ADDRESS >> 8
-        self._buffer_n[1] = DMP_START_ADDRESS & 0xff
-        self.write_bytes(2, ICM_PRGM_START_ADDRH, self._buffer_n)
+        self._buffer = bytearray(2)
+        self._buffer[0] = DMP_START_ADDRESS >> 8
+        self._buffer[1] = DMP_START_ADDRESS & 0xff
+        self.write_bytes(2, ICM_PRGM_START_ADDRH, self._buffer)
 
         #Set the Hardware Fix Disable register to 0x48
         self.write(0, ICM_HW_FIX_DISABLE,0x48)
@@ -1268,6 +1262,9 @@ class ICM20948:
         DMP_CPASS_TIME_BUFFER_FACTOR = bytearray([0x00, 0x45])
         self.DMP_write(DMP_CPASS_TIME_BUFFER, DMP_CPASS_TIME_BUFFER_FACTOR)
         
+        #Try a reser of DMP
+        self.reg_config(0, ICM_USER_CTRL, ICM_USER_CTRL_DMP_RST, True)
+        
         #Finally Turn On FIFO and DMP
         self.reg_config(0, ICM_USER_CTRL, ICM_USER_CTRL_DMP_EN, True)
         self.reg_config(0, ICM_USER_CTRL, ICM_USER_CTRL_FIFO_EN, True)
@@ -1275,7 +1272,7 @@ class ICM20948:
         
     #Read fifo count
     def DMP_fifo_count(self):
-        data = self.read_bytes(0,ICM_FIFO_COUNTH, 2)
+        data = self.read(0,ICM_FIFO_COUNTH, 2)
         count = ((data[0] & 0x1F ) << 8 ) | data[1]
         #self._dbg("FIFO {:.0f} bytes".format(count))
         return count
@@ -1286,7 +1283,7 @@ class ICM20948:
         fcount = self.DMP_fifo_count()
         if(fcount == 0) :
             return
-        self._dbg("Processing FIFO {:.0f} bytes".format(fcount))
+        #self._dbg("Processing FIFO {:.0f} bytes".format(fcount))
         #Read Header
         if (fcount < DMP_Header_Bytes) :
             return
@@ -1316,7 +1313,7 @@ class ICM20948:
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Raw_Accel_Bytes) :
                 return
-            data = self.read_bytes(0, ICM_FIFO_R_W, DMP_Raw_Accel_Bytes)
+            data = self.read(0, ICM_FIFO_R_W, DMP_Raw_Accel_Bytes)
             data_ordered = data
             for i in range(DMP_Raw_Accel_Bytes) :
                 data_ordered[DMP_Pedom_Quat6_Byte_Ordering[i]]=data[i]
@@ -1333,7 +1330,7 @@ class ICM20948:
                 fcount = self.DMP_fifo_count()
             if (fcount < (DMP_Raw_Gyro_Bytes + DMP_Gyro_Bias_Bytes)) :
                 return
-            data = self.read_bytes(0, ICM_FIFO_R_W, DMP_Raw_Gyro_Bytes + DMP_Gyro_Bias_Bytes)
+            data = self.read(0, ICM_FIFO_R_W, DMP_Raw_Gyro_Bytes + DMP_Gyro_Bias_Bytes)
             data_ordered = data
             for i in range(DMP_Raw_Gyro_Bytes + DMP_Gyro_Bias_Bytes) :
                 data_ordered[DMP_Raw_Gyro_Byte_Ordering[i]]=data[i]
@@ -1351,7 +1348,7 @@ class ICM20948:
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Compass_Bytes) :
                 return
-            data = self.read_bytes(0, ICM_FIFO_R_W, DMP_Compass_Bytes)
+            data = self.read(0, ICM_FIFO_R_W, DMP_Compass_Bytes)
             data_ordered = data
             for i in range(DMP_Compass_Bytes) :
                 data_ordered[DMP_Pedom_Quat6_Byte_Ordering[i]]=data[i]
@@ -1366,7 +1363,7 @@ class ICM20948:
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_ALS_Bytes) :
                 return
-            data = self.read_bytes(0, ICM_FIFO_R_W, DMP_ALS_Bytes)
+            data = self.read(0, ICM_FIFO_R_W, DMP_ALS_Bytes)
             #To do process
             self._dbg("FIFO ALS", data)
             fcount -= DMP_ALS_Bytes
@@ -1377,7 +1374,7 @@ class ICM20948:
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Quat6_Bytes) :
                 return
-            data = self.read_bytes(0, ICM_FIFO_R_W, DMP_Quat6_Bytes)
+            data = self.read(0, ICM_FIFO_R_W, DMP_Quat6_Bytes)
             data_ordered = data
             for i in range(DMP_Quat6_Bytes) :
                 data_ordered[DMP_Quat6_Byte_Ordering[i]]=data[i]
@@ -1395,7 +1392,7 @@ class ICM20948:
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Quat9_Bytes) :
                 return
-            data = self.read_bytes(0, ICM_FIFO_R_W, DMP_Quat9_Bytes)
+            data = self.read(0, ICM_FIFO_R_W, DMP_Quat9_Bytes)
             data_ordered = data
             for i in range(DMP_Quat9_Bytes) :
                 data_ordered[DMP_Quat9_Byte_Ordering[i]]=data[i]
@@ -1412,7 +1409,7 @@ class ICM20948:
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Pedom_Quat6_Bytes) :
                 return
-            data = self.read_bytes(0, ICM_FIFO_R_W, DMP_Pedom_Quat6_Bytes)
+            data = self.read(0, ICM_FIFO_R_W, DMP_Pedom_Quat6_Bytes)
             data_ordered = data
             for i in range(DMP_Pedom_Quat6_Bytes) :
                 data_ordered[DMP_Pedom_Quat6_Byte_Ordering[i]]=data[i]
@@ -1430,7 +1427,7 @@ class ICM20948:
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Geomag_Bytes) :
                 return
-            data = self.read_bytes(0, ICM_FIFO_R_W, DMP_Geomag_Bytes)
+            data = self.read(0, ICM_FIFO_R_W, DMP_Geomag_Bytes)
             data_ordered = data
             for i in range(DMP_Geomag_Bytes) :
                 data_ordered[DMP_Quat9_Byte_Ordering[i]]=data[i]
@@ -1447,7 +1444,7 @@ class ICM20948:
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Pressure_Bytes) :
                 return
-            data = self.read_bytes(0, ICM_FIFO_R_W, DMP_Pressure_Bytes)
+            data = self.read(0, ICM_FIFO_R_W, DMP_Pressure_Bytes)
             press = data[0] | (data[1] << 8) | (data[2] << 16)
             temp = data[3] | (data[4] << 8) | (data[5] << 16)
             self._dbg("FIFO Press&Temp\tPress", press, "\tTemp",temp)
@@ -1460,7 +1457,7 @@ class ICM20948:
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Gyro_Calibr_Bytes) :
                 return
-            data = self.read_bytes(0, ICM_FIFO_R_W, DMP_Gyro_Calibr_Bytes)
+            data = self.read(0, ICM_FIFO_R_W, DMP_Gyro_Calibr_Bytes)
             #To do process
             self._dbg("FIFO Gyro Calibration : Skipped...")
             fcount -= DMP_Gyro_Calibr_Bytes
@@ -1471,7 +1468,7 @@ class ICM20948:
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Compass_Calibr_Bytes) :
                 return
-            data = self.read_bytes(0, ICM_FIFO_R_W, DMP_Compass_Calibr_Bytes)
+            data = self.read(0, ICM_FIFO_R_W, DMP_Compass_Calibr_Bytes)
             data_ordered = data
             for i in range(DMP_Compass_Calibr_Bytes) :
                 data_ordered[DMP_Quat6_Byte_Ordering[i]]=data[i]
@@ -1488,7 +1485,7 @@ class ICM20948:
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Step_Detector_Bytes) :
                 return
-            data = self.read_bytes(0, ICM_FIFO_R_W, DMP_Step_Detector_Bytes)
+            data = self.read(0, ICM_FIFO_R_W, DMP_Step_Detector_Bytes)
             steps = data[0]<<24 | data[1]<<16 | data[2] << 8 | data[3] # MSB first
             #To do process
             self._dbg("FIFO Step Detector", steps)
@@ -1502,7 +1499,7 @@ class ICM20948:
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Accel_Accuracy_Bytes) :
                 return
-            data = self.read_bytes(0, ICM_FIFO_R_W, DMP_Accel_Accuracy_Bytes)
+            data = self.read(0, ICM_FIFO_R_W, DMP_Accel_Accuracy_Bytes)
             accuracy = data[0]<<8 | data[1]
             self._dbg("FIFO Accel Accuracy", accuracy)
             fcount -= DMP_Accel_Accuracy_Bytes
@@ -1513,7 +1510,7 @@ class ICM20948:
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Gyro_Accuracy_Bytes) :
                 return
-            data = self.read_bytes(0, ICM_FIFO_R_W, DMP_Gyro_Accuracy_Bytes)
+            data = self.read(0, ICM_FIFO_R_W, DMP_Gyro_Accuracy_Bytes)
             accuracy = data[0]<<8 | data[1]
             self._dbg("FIFO Cyro Accuracy", accuracy)
             fcount -= DMP_Gyro_Accuracy_Bytes
@@ -1524,7 +1521,7 @@ class ICM20948:
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Compass_Accuracy_Bytes) :
                 return
-            data = self.read_bytes(0, ICM_FIFO_R_W, DMP_Compass_Accuracy_Bytes)
+            data = self.read(0, ICM_FIFO_R_W, DMP_Compass_Accuracy_Bytes)
             accuracy = data[0]<<8 | data[1]
             self._dbg("FIFO Compass Accuracy", accuracy)
             fcount -= DMP_Compass_Accuracy_Bytes
@@ -1535,7 +1532,7 @@ class ICM20948:
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Fsync_Detection_Bytes) :
                 return
-            data = self.read_bytes(0, ICM_FIFO_R_W, DMP_Fsync_Detection_Bytes)
+            data = self.read(0, ICM_FIFO_R_W, DMP_Fsync_Detection_Bytes)
             fsynch = data[0]<<8 | data[1]
             #To do process
             self._dbg("FIFO FSynch Detection", fsynch)
@@ -1547,7 +1544,7 @@ class ICM20948:
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Pickup_Bytes) :
                 return
-            data = self.read_bytes(0, ICM_FIFO_R_W, DMP_Pickup_Bytes)
+            data = self.read(0, ICM_FIFO_R_W, DMP_Pickup_Bytes)
             pickup = data[0]<<8 | data[1]
             self._dbg("FIFO Pickup", pickup)
             fcount -= DMP_Pickup_Bytes
@@ -1558,7 +1555,7 @@ class ICM20948:
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Activity_Recognition_Bytes) :
                 return
-            data = self.read_bytes(0, ICM_FIFO_R_W, DMP_Activity_Recognition_Bytes)
+            data = self.read(0, ICM_FIFO_R_W, DMP_Activity_Recognition_Bytes)
             #To do process
             self._dbg("FIFO Activity Recog.", data)
             fcount -= DMP_Activity_Recognition_Bytes
@@ -1569,7 +1566,7 @@ class ICM20948:
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_Secondary_On_Off_Bytes) :
                 return
-            data = self.read_bytes(0, ICM_FIFO_R_W, DMP_Secondary_On_Off_Bytes)
+            data = self.read(0, ICM_FIFO_R_W, DMP_Secondary_On_Off_Bytes)
             #To do process
             self._dbg("FIFO Secondary On-Off", data)
             fcount -= DMP_Secondary_On_Off_Bytes
@@ -1606,9 +1603,9 @@ class ICM20948:
         reg_address = register & 0xFF
         #self._dbg("Reading DMP Bank", hex(reg_membank),"Adress", hex(reg_address))
         self.write(0, ICM_MEM_START_ADDR, reg_address)
-        self._buffer_n = bytearray (length)
-        self._bus.readfrom_mem_into(self._addr, ICM_MEM_R_W , self._buffer_n)
-        return self._buffer_n
+        self._buffer = bytearray (length)
+        self._bus.readfrom_mem_into(self._addr, ICM_MEM_R_W , self._buffer)
+        return self._buffer
         #Sleep Again
         self.reg_config(0, ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_SLEEP, enable=True)
             
@@ -1682,23 +1679,23 @@ class ICM20948:
         self.reg_config(0, ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_LP, enable=False)
         
         #Write datas
-        self._buffer_n = bytearray(2)
+        self._buffer = bytearray(2)
         #Write DATA_OUT_CTL1
-        self._buffer_n[0] = _data_out_ctl >> 8
-        self._buffer_n[1] = _data_out_ctl & 0xFF
-        self.DMP_write(DMP_DATA_OUT_CTL1, self._buffer_n)
+        self._buffer[0] = _data_out_ctl >> 8
+        self._buffer[1] = _data_out_ctl & 0xFF
+        self.DMP_write(DMP_DATA_OUT_CTL1, self._buffer)
         #Write DATA_OUT_CTL2
-        self._buffer_n[0] = _data_out_ctl2 >> 8
-        self._buffer_n[1] = _data_out_ctl2 & 0xFF
-        self.DMP_write(DMP_DATA_OUT_CTL2, self._buffer_n)
+        self._buffer[0] = _data_out_ctl2 >> 8
+        self._buffer[1] = _data_out_ctl2 & 0xFF
+        self.DMP_write(DMP_DATA_OUT_CTL2, self._buffer)
         #Write DATA_RDY_STATUS
-        self._buffer_n[0] = _data_rdy_status >> 8
-        self._buffer_n[1] = _data_rdy_status & 0xFF
-        self.DMP_write(DMP_DATA_RDY_STATUS, self._buffer_n)
+        self._buffer[0] = _data_rdy_status >> 8
+        self._buffer[1] = _data_rdy_status & 0xFF
+        self.DMP_write(DMP_DATA_RDY_STATUS, self._buffer)
         #Write MOTION_EVENT_CTL
-        self._buffer_n[0] = _inv_event_ctl >> 8
-        self._buffer_n[1] = _inv_event_ctl & 0xFF
-        self.DMP_write(DMP_DATA_MOTION_EVENT_CTRL, self._buffer_n)
+        self._buffer[0] = _inv_event_ctl >> 8
+        self._buffer[1] = _inv_event_ctl & 0xFF
+        self.DMP_write(DMP_DATA_MOTION_EVENT_CTRL, self._buffer)
         #Set Low Power on
         self.reg_config(0,ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_LP, enable=True)
                 
@@ -1746,7 +1743,7 @@ class ICM20948:
         #gyro_level should be set to 4 regardless of fullscale, due to the addition of API dmp_icm20648_set_gyro_fsr()
         gyro_level = 4
         #Read Timebase_correction_PLL register from bank 1
-        pll = self.read_bytes(1, ICM_TIMEBASE_CORRECTION_PLL)[0]
+        pll = self.read(1, ICM_TIMEBASE_CORRECTION_PLL)
         self._gyro_sf_pll = pll
         #self._dbg("PLL", pll)
         
@@ -1764,12 +1761,12 @@ class ICM20948:
             self._gyro_sf = int(result)
             
         #self._dbg("SET_GYRO_FS PLL", pll, "DMP_GYRO_FS", self._gyro_sf)
-        self._buffer_n = bytearray(4)
-        self._buffer_n[0] = self._gyro_sf >> 24
-        self._buffer_n[1] = self._gyro_sf >> 16
-        self._buffer_n[2] = self._gyro_sf >> 8
-        self._buffer_n[3] = self._gyro_sf & 0xFF
-        self.DMP_write(DMP_GYRO_SF, self._buffer_n)
+        self._buffer = bytearray(4)
+        self._buffer[0] = self._gyro_sf >> 24
+        self._buffer[1] = self._gyro_sf >> 16
+        self._buffer[2] = self._gyro_sf >> 8
+        self._buffer[3] = self._gyro_sf & 0xFF
+        self.DMP_write(DMP_GYRO_SF, self._buffer)
         
     def DMP_set_gyro_sf2(self, div , gyro_level) :
 
@@ -1778,7 +1775,7 @@ class ICM20948:
         dmp_div = base_SR / mpu_default_dmp_freq
 
         #Read Timebase_correction_PLL register from bank 1
-        pll = self.read_bytes(1, ICM_TIMEBASE_CORRECTION_PLL)[0]
+        pll = self.read(1, ICM_TIMEBASE_CORRECTION_PLL)
         self._gyro_sf_pll = pll
         self._dbg("PLL", pll)
         
