@@ -3,7 +3,7 @@ from math import asin, atan2, degrees, radians, sqrt
 from utime import sleep_ms, sleep_us, ticks_ms, ticks_us, ticks_diff
 
 LIBNAME = "ICM20948"
-LIBVERSION = "0.9-5"
+LIBVERSION = "0.9-6"
 
 # This micropython library drive the TDK ICM20948 9 axis sensors
 # It can work :
@@ -289,29 +289,29 @@ DMP_BM_BATCH_CNTR = 0x1B0 # 27*16+0
 DMP_BM_BATCH_THLD = 0x13C # 19*16+12
 DMP_BM_BATCH_MASK = 0x15E # 21*16+14
 #SENSOR OUTPUT DATA RATE - ALL 16 BITS
-DMP_ODR_ACCEL = 0xBE # 11*16+14
-DMP_ODR_GYRO = 0xBA # 11*16+10
-DMP_ODR_CPASS = 0xB6 # 11*16+6
-DMP_ODR_ALS = 0xB2 # 11*16+2
-DMP_ODR_QUAT6 = 0xAC # 10*16+12
-DMP_ODR_QUAT9 = 0xA8 # 10*16+8
-DMP_ODR_PQUAT6 = 0xA4 # 10*16+4
 DMP_ODR_GEOMAG = 0xA0 # 10*16+0
-DMP_ODR_PRESSURE = 0xBC # 11*16+12
-DMP_ODR_GYRO_CALIB = 0xB8 # 11*16+8
+DMP_ODR_PQUAT6 = 0xA4 # 10*16+4
+DMP_ODR_QUAT9 = 0xA8 # 10*16+8
+DMP_ODR_QUAT6 = 0xAC # 10*16+12
+DMP_ODR_ALS = 0xB2 # 11*16+2
 DMP_ODR_CPASS_CALIBR = 0xB4 # 11*16+4
+DMP_ODR_CPASS = 0xB6 # 11*16+6
+DMP_ODR_GYRO_CALIB = 0xB8 # 11*16+8
+DMP_ODR_GYRO = 0xBA # 11*16+10
+DMP_ODR_PRESSURE = 0xBC # 11*16+12
+DMP_ODR_ACCEL = 0xBE # 11*16+14
 #SENSOR OUTPUT DATA RATE COUNTER - ALL 16 BITS
-DMP_ODR_CNTR_ACCEL = 0x9E # 9*16+14
-DMP_ODR_CNTR_GYRO = 0x9A # 9*16+10
-DMP_ODR_CNTR_CPASS = 0x96 # 9*16+6
-DMP_ODR_CNTR_ALS = 0x92 # 9*16+2
-DMP_ODR_CNTR_QUAT6 = 0x8C # 8*16+12
-DMP_ODR_CNTR_QUAT9 = 0x88 # 8*16+8
-DMP_ODR_CNTR_PQUAT6 = 0x84 # 8*16+4
 DMP_ODR_CNTR_GEOMAG = 0x80 # 8*16+0
-DMP_ODR_CNTR_PRESSURE = 0x9C # 9*16+12
-DMP_ODR_CNTR_GYRO_CALIBR = 0x98 # 9*16+8
+DMP_ODR_CNTR_PQUAT6 = 0x84 # 8*16+4
+DMP_ODR_CNTR_QUAT9 = 0x88 # 8*16+8
+DMP_ODR_CNTR_QUAT6 = 0x8C # 8*16+12
+DMP_ODR_CNTR_ALS = 0x92 # 9*16+2
 DMP_ODR_CNTR_CPASS_CALIBR = 0x94 # 9*16+4
+DMP_ODR_CNTR_CPASS = 0x96 # 9*16+6
+DMP_ODR_CNTR_GYRO_CALIBR = 0x98 # 9*16+8
+DMP_ODR_CNTR_GYRO = 0x9A # 9*16+10
+DMP_ODR_CNTR_PRESSURE = 0x9C # 9*16+12
+DMP_ODR_CNTR_ACCEL = 0x9E # 9*16+14
 #MOUNTING MATRIX - ALL 32 BITS
 DMP_CPASS_MTX_00 = 0x170 # 23*16+0
 DMP_CPASS_MTX_01 = 0x174 # 23*16+4
@@ -1263,11 +1263,23 @@ class ICM20948:
         self.DMP_write(DMP_CPASS_TIME_BUFFER, DMP_CPASS_TIME_BUFFER_FACTOR)
         
         #Try a reser of DMP
-        self.reg_config(0, ICM_USER_CTRL, ICM_USER_CTRL_DMP_RST, True)
+        #self.reg_config(0, ICM_USER_CTRL, ICM_USER_CTRL_DMP_RST, True)
+        
+        #Try DMP reset Start Programm
+        self._buffer = bytearray(2)
+        self._buffer[0] = DMP_START_ADDRESS >> 8
+        self._buffer[1] = DMP_START_ADDRESS & 0xff
+        self.write_bytes(2, ICM_PRGM_START_ADDRH, self._buffer)
+        
         
         #Finally Turn On FIFO and DMP
         self.reg_config(0, ICM_USER_CTRL, ICM_USER_CTRL_DMP_EN, True)
         self.reg_config(0, ICM_USER_CTRL, ICM_USER_CTRL_FIFO_EN, True)
+        
+        
+        
+        #If needed can set rate for each sensor 
+        #self.DMP_odr_compass(DMP_ODR_CPASS,1) #1 = 225Hz
         
         
     #Read fifo count
@@ -1587,7 +1599,7 @@ class ICM20948:
     def DMP_write(self, register, data):
         #Sleep Out
         self.reg_config(0, ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_SLEEP, enable=False)
-        reg_membank = (register & 0xFF00) >> 8
+        reg_membank = register >> 8
         self.DMP_bank(reg_membank)
         reg_address = register & 0xFF
         #self._dbg("Writing DMP Bank", hex(reg_membank),"Adress", hex(reg_address),"Data",data)
@@ -1608,7 +1620,25 @@ class ICM20948:
         return self._buffer
         #Sleep Again
         self.reg_config(0, ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_SLEEP, enable=True)
-            
+
+    #Set ODR for DMP
+    def DMP_odr_compass(self, dmp_ord_sensor, interval):
+        #Sleep Out
+        self.reg_config(0, ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_SLEEP, enable=False)
+        self.reg_config(0, ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_LP, enable=False)
+               
+        odr_val = bytearray(2)
+        odr_val[0] = interval >> 8
+        odr_val[1] = interval & 0xFF
+        odr_zero_count = bytearray([0x00, 0x00])
+        self.DMP_write(dmp_ord_sensor, odr_val)
+        #Write 0 to related counter (they are 32 bytes earlier in DMP mem)
+        self.DMP_write(dmp_ord_sensor - 0x20, odr_zero_count)
+        
+        #Set LP again
+        self.reg_config(0, ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_LP, enable=True)
+
+
     #Activate specific DMP sensor 
     def DMP_enable_sensor(self, icm_sensor, enable=True):
         #Convert strind ICM_sensor to android_sensor number
