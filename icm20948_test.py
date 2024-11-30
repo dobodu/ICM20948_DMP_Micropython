@@ -32,9 +32,7 @@ HPT:   {heading:7.3f} {pitch:7.3f} {roll:7.3f}""")
         sleep_ms(25)
     
 else :
-    
-    imu.DMP_config()
-        
+           
     #imu.DMP_enable_sensor("ACCELEROMETER",True)
     #imu.DMP_enable_sensor("GYROSCOPE",True)
     #imu.DMP_enable_sensor("RAW_ACCELEROMETER",True)
@@ -54,4 +52,3 @@ else :
     
     while True:
         imu.DMP_fifo_read()
-        sleep_ms(10)
