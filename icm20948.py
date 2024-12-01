@@ -3,7 +3,7 @@ from math import asin, atan2, degrees, radians, sqrt
 from utime import sleep_ms, sleep_us, ticks_ms, ticks_us, ticks_diff
 
 LIBNAME = "ICM20948"
-LIBVERSION = "0.9-6.1"
+LIBVERSION = "0.9-6.2"
 
 # This micropython library drive the TDK ICM20948 9 axis sensors
 # It can work :
@@ -42,37 +42,32 @@ LIBVERSION = "0.9-6.1"
 #
 # Working / Not working DMP Sensors
 #
-#  Sensor                        Working     Tested
+#  Sensor                        Working
 #  -----------------------------------------------------
-#  ACCELEROMETER :               OK          OK
-#  GYROSCOPE :                   OK          OK
-#  RAW_ACCELEROMETER             OK          OK
-#  RAW_GYROSCOPE                 OK          OK
+#  ACCELEROMETER :               OK
+#  GYROSCOPE :                   OK
+#  RAW_ACCELEROMETER             OK
+#  RAW_GYROSCOPE                 OK
 #  MAGNETIC_FIELD_UNCALIBRATED : NO
 #  GYROSCOPE_UNCALIBRATED        OK          
 #  ACTIVITY_CLASSIFICATON        NO          Missing ANDROID_SENSORS_CTRL_BITS
 #  STEP_DETECTOR                 NO          Missing header2 ?
 #  STEP_COUNTER                  NO          Missing header2 ?
-#  GAME_ROTATION_VECTOR          OK          To check
-#  ROTATION_VECTOR               OK          To check
-#  GEOM_ROTATION_VECTOR :        OK          To check
-#  GEOM_FIELD :                  OK          To decode
-#  GRAVITY :                     OK          To check
-#  LINEAR_ACCELERATION           OK          To check
-#  ORIENTATION                   OK          To check
+#  GAME_ROTATION_VECTOR          ?
+#  ROTATION_VECTOR               ?
+#  GEOM_ROTATION_VECTOR :        ?
+#  GEOM_FIELD :                  ?
+#  GRAVITY :                     ?
+#  LINEAR_ACCELERATION           ?
+#  ORIENTATION                   ?
 #
 # To do :
 #
-# Reading check (the same result should be obtained between ICM and DMP), add sensitivity to DMP...
-# Implement DMP FIFO decoding for all required activity
+# Reading check (the same result should be obtained between ICM and DMP)
 # Implement DMP bias writting for accelerometer and gyro
 # Check self.DMP_set_gyro_sf
 # Write DMP interrupt enable function
 # Understand and rewrite Configure Acceleration Only Gains, Alpha Var and AVAr
-#
-# Done :
-#
-# Check self.DMP_set_acc_full_scale : It's working as expected
 
 #================================================================================
 # CHIP ADRESSES AND IDS
@@ -126,7 +121,7 @@ ICM_INT_ENABLE_1 = 0x11
 ICM_INT_ENABLE_2 = 0x12
 ICM_INT_ENABLE_3 = 0x13
 ICM_I2C_MST_STATUS = 0x17
-ICM_DMP_INT_STATUS = 0x18	#thanks Sparkfun
+ICM_DMP_INT_STATUS = 0x18 #thanks Sparkfun
 ICM_INT_STATUS =0x19
 ICM_INT_STATUS_1 =0x1A
 ICM_INT_STATUS_2 =0x1B
@@ -238,7 +233,7 @@ AK_ST1_DOR = 0b00000010   # Data overflow bit
 AK_ST1_DRDY = 0b00000001  # Data self.ready bit
 AK_HXL = 0x11
 AK_ST2 = 0x18
-AK_ST2_HOFL = 0b00001000   	# Magnetic sensor overflow bit
+AK_ST2_HOFL = 0b00001000   # Magnetic sensor overflow bit
 AK_CNTL2 = 0x31
 AK_CNTL2_MODE_OFF = 0
 AK_CNTL2_MODE_SINGLE = 1
@@ -993,36 +988,29 @@ class ICM20948:
         i2c_slv_ctrl = ICM_I2C_SLV0_CTRL + 4 * slave
         i2c_slv_do = ICM_I2C_SLV0_DO + 4 * slave
         
-        slv_addr = addr
+        self.write(3, i2c_slv_reg, reg)
+        
         if RnW :
-            slv_addr = addr | ICM_I2C_SLV_ADDR_RNW
-        self.write(3, i2c_slv_addr, slv_addr)
+            self.write(3, i2c_slv_addr, addr | ICM_I2C_SLV_ADDR_RNW)
+        else :
+            self.write(3, i2c_slv_addr, addr)
             
-        slv_reg = reg
-        self.write(3, i2c_slv_reg, slv_reg)
+        self.write(3, i2c_slv_reg, reg)
 
         slv_ctrl = length
-        if slv_ctrl != None :    
-            if En :
-                slv_ctrl |= ICM_I2C_SLV_CTRL_SLV_ENABLE
-            if Swp :
-                slv_ctrl |= ICM_I2C_SLV_CTRL_BYTE_SWAP
-            if Dis :
-                slv_ctrl |= ICM_I2C_SLV_CTRL_REG_DIS
-            if Grp :
-                slv_ctrl |= ICM_I2C_SLV_CTRL_REG_GROUP
-            self.write(3, i2c_slv_ctrl, slv_ctrl)
-        else :
-            slv_ctrl = "None"
+        if En :
+            slv_ctrl |= ICM_I2C_SLV_CTRL_SLV_ENABLE
+        if Swp :
+            slv_ctrl |= ICM_I2C_SLV_CTRL_BYTE_SWAP
+        if Dis :
+            slv_ctrl |= ICM_I2C_SLV_CTRL_REG_DIS
+        if Grp :
+            slv_ctrl |= ICM_I2C_SLV_CTRL_REG_GROUP
+        self.write(3, i2c_slv_ctrl, slv_ctrl)
         
         if DO != None :
-            slv_do = DO
             self.write(3, i2c_slv_do, DO)
-        else :
-            slv_do = "None"
-        
-        #self._dbg("Slave", 0, "Config Add", hex(slv_addr), "Reg", hex(slv_reg), "Ctrl", slv_ctrl, "DO", slv_do)
-
+  
         #Activate I2C Master so I2C_slave setup can be propagated to slave itself
         self.reg_config(0, ICM_USER_CTRL, ICM_USER_CTRL_I2C_MST_EN, True)
 
