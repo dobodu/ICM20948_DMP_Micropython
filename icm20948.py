@@ -991,9 +991,8 @@ class ICM20948:
         self.write(3, i2c_slv_reg, reg)
         
         if RnW :
-            self.write(3, i2c_slv_addr, addr | ICM_I2C_SLV_ADDR_RNW)
-        else :
-            self.write(3, i2c_slv_addr, addr)
+            addr |= ICM_I2C_SLV_ADDR_RNW
+        self.write(3, i2c_slv_addr, addr)
             
         self.write(3, i2c_slv_reg, reg)
 
