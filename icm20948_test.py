@@ -2,13 +2,18 @@ from machine import Pin, I2C
 import icm20948
 from math import degrees, atan2
 from utime import sleep_ms
+from ustruct import unpack_from
 
-I2C0_SCL = Pin(07)          # I2C SCL 
-I2C0_SDA = Pin(06)          #  I2C SCA
+I2C0_SCL = Pin(07) # I2C SCL 
+I2C0_SDA = Pin(06) # I2C SCA
     
 i2c0 = I2C(0, sda=I2C0_SDA, scl=I2C0_SCL, freq = 400_000)
 
-imu = icm20948.ICM20948(i2c0, dmp = True, debug=True)
+
+#dmp = False for direct Acc/Gyr/Magn
+#dmp = True for DMP processor
+
+imu = icm20948.ICM20948(i2c0, dmp = False, debug=True)
 
 if not imu.dmp_ready :
     
