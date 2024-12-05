@@ -3,7 +3,7 @@ from math import asin, atan2, degrees, radians, sqrt
 from utime import sleep_ms, sleep_us, ticks_ms, ticks_us, ticks_diff
 
 LIBNAME = "ICM20948"
-LIBVERSION = "0.9-6.2"
+LIBVERSION = "0.9-6.3"
 
 # This micropython library drive the TDK ICM20948 9 axis sensors
 # It can work :
@@ -190,6 +190,8 @@ ICM_MOD_CTRL_USR_REG_LP_DMP_EN = 0x01
 #BANK3
 ICM_I2C_MST_ODR_CONFIG = 0x00
 ICM_I2C_MST_CTRL = 0x01
+ICM_I2C_MST_CTRL_MULTI = 0b10000000 #Multi master
+ICM_I2C_MST_CTRL_NSR =   0b00010000 #Stop between reads
 ICM_I2C_MST_DELAY_CTRL = 0x02
 ICM_I2C_SLV0_ADDR = 0x03
 ICM_I2C_SLV0_REG = 0x04
@@ -364,7 +366,7 @@ DMP_CPASS_MAX_INNO = 0x7C0 # 124*16+0
 DMP_CPASS_BIAS_OFFSET = 0x714 # 113*16+4
 DMP_CPASS_CUR_BIAS_OFFSET = 0x724 # 114*16+4
 DMP_CPASS_PRE_SENSOR_DATA = 0x574 # 87*16+4
-#COMPASS CILIBRATION PARAMS TO BE ADJUSTER WITH SAMPLING RATE
+#COMPASS CALIBRATION PARAMS TO BE ADJUSTER WITH SAMPLING RATE
 DMP_CPASS_TIME_BUFFER = 0x70E # 112*16+14
 DMP_CPASS_RADIUS_3D_THRESH_ANOMALY = 0x708 # 112*16+8 : 4 bytes
 DMP_CPASS_STATUS_CHK = 0x19C # 25*16+12
@@ -720,7 +722,7 @@ class ICM20948:
         self.set_temp_low_pass(enabled=True, mode=1)
 
         #Configure I2C Master Clock
-        self.write(3, ICM_I2C_MST_CTRL, 0x07)  #I2C MSTR CLOCK = 07 = 345,6kHz
+        self.write(3, ICM_I2C_MST_CTRL, ICM_I2C_MST_CTRL_NSR | 0x07)  #I2C MSTR CLOCK = 07 = 345,6kHz
 
         # Check if we cas access Magnetometer
         # enabling Slave 0 Read AK_WIA thought AK_I2C_ADD
@@ -1085,7 +1087,7 @@ class ICM20948:
         #Remove sleep and LP
         self.reg_config(0,ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_SLEEP, False)
         self.reg_config(0, ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_LP, False)
-        
+
         #Enable (En = True) SLV0 to read (RnW = True and nothing in DO) 10 byte AK09916 RSV2 register
         #Reserved data is in Big Indian so let's swap byte (Swp True)
         #Data are in group of 2 bytes (Grp = True)
@@ -1100,9 +1102,15 @@ class ICM20948:
         
         #Configure ODR to 68,75 Hz = 1100/2**4
         self.write(3, ICM_I2C_MST_ODR_CONFIG, 0x04)
-               
+
+        #Set Auto Clock (added for debugging but already setup in init)
+        self.write(0, ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_CLOCK_AUTO)
+        
+        #Enable Accel and Gyro (added for debuggin but already setup in init)
+        self.write(0, ICM_PWR_MGMT_2, 0x40)
+
         #Place I2C_master only in Low Power Mode
-        self.reg_config(0, ICM_LP_CFG, ICM_LP_CFG_ACC | ICM_LP_CFG_GYRO , False)
+        #self.reg_config(0, ICM_LP_CFG, ICM_LP_CFG_ACC | ICM_LP_CFG_GYRO , False)
         self.reg_config(0, ICM_LP_CFG, ICM_LP_CFG_MST, True)
 
         #Disable DMP and FIFO
@@ -1113,6 +1121,7 @@ class ICM20948:
         
         #Set Acc full scale range 4g
         self.set_acc_full_scale(4)  # Global setup below
+        
         #Enable Gyro DLPF
         self.set_gyro_low_pass(True, mode=0)
         
@@ -1133,13 +1142,16 @@ class ICM20948:
         #Set Gyroscope Sample_rate 55Hz
         self.set_gyro_sample_rate(55)
 
-        #Upload DMP firmware
-        self.DMP_load_firmware()
-        
         #Write the 2 byte Firmware Start Value to ICM PRGM_STRT_ADDRH/PRGM_STRT_ADDRL
         self._buffer = bytearray(2)
         self._buffer[0] = DMP_START_ADDRESS >> 8
         self._buffer[1] = DMP_START_ADDRESS & 0xff
+        self.write_bytes(2, ICM_PRGM_START_ADDRH, self._buffer)
+
+        #Upload DMP firmware
+        self.DMP_load_firmware()
+        
+        #Write the 2 byte Firmware Start Value to ICM PRGM_STRT_ADDRH/PRGM_STRT_ADDRL
         self.write_bytes(2, ICM_PRGM_START_ADDRH, self._buffer)
 
         #Set the Hardware Fix Disable register to 0x48
@@ -1240,13 +1252,16 @@ class ICM20948:
         #If needed can set rate for each sensor
         # parameter is (DMP running rate / ODR ) - 1
         # Here 1 means Compass is running half speed than DMP
-        self.DMP_odr_compass(DMP_ODR_CPASS,1)
+        #self.DMP_odr_compass(DMP_ODR_CPASS,1)
         
+        self.DMP_write(DMP_ODR_CPASS_CALIBR, 0)
+        self.DMP_write(DMP_ODR_CNTR_CPASS_CALIBR, 0)
+
+
         #Enable FIFO and DMP
         self.reg_config(0, ICM_USER_CTRL, ICM_USER_CTRL_DMP_EN | ICM_USER_CTRL_FIFO_EN, True)
         #Reset FIFO and DMP
         self.reg_config(0, ICM_USER_CTRL, ICM_USER_CTRL_DMP_RST, True)
-        
         #Set Low Power on
         self.reg_config(0,ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_LP, True)
         
@@ -1574,25 +1589,7 @@ class ICM20948:
         reg_address = register & 0xFF
         #self._dbg("Writing DMP Bank", hex(reg_membank),"Adress", hex(reg_address),"Data",data)
         self.write(0, ICM_MEM_START_ADDR, reg_address)
-        self.write_bytes(0, ICM_MEM_R_W, bytes(data))
-        
-        #DEBUG LUDO TEST METHODE ALTERNATIVE
-        #length = len (data)
-        #byteswritten = 0
-        #while(byteswritten < length) :
-        #    reg_address = register & 0xFF
-        #    self.write(0, ICM_MEM_START_ADDR, reg_address)
-        #    if (length - byteswritten <= DMP_MAX_WRITE) :
-        #        thislength = length - byteswritten
-        #    else :
-        #        thislength = DMP_MAX_WRITE
-        #    thisdata = data[byteswritten:byteswritten + thislength]
-        #    #self._dbg(bytes(thisdata))
-        #    self.write_bytes(0, ICM_MEM_R_W, bytes(thisdata))
-        #    byteswritten += thislength
-        #    register += thislength
-            
-         
+        self.write_bytes(0, ICM_MEM_R_W, bytes(data))        
         
     #Read to DMP register       
     def DMP_read(self, register, length = 1):
@@ -1782,7 +1779,7 @@ class ICM20948:
         else :
             self._gyro_sf = int(result)
             
-        #self._dbg("SET_GYRO_FS PLL", pll, "DMP_GYRO_FS", self._gyro_sf)
+        self._dbg("SET_GYRO_FS PLL", pll, "DMP_GYRO_FS", self._gyro_sf)
         self._buffer = bytearray(4)
         self._buffer[0] = self._gyro_sf >> 24
         self._buffer[1] = self._gyro_sf >> 16
