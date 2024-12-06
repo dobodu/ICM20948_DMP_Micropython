@@ -3,7 +3,7 @@ from math import asin, atan2, degrees, radians, sqrt
 from utime import sleep_ms, sleep_us, ticks_ms, ticks_us, ticks_diff
 
 LIBNAME = "ICM20948"
-LIBVERSION = "0.9-6.3"
+LIBVERSION = "0.9-6.4"
 
 # This micropython library drive the TDK ICM20948 9 axis sensors
 # It can work :
@@ -472,10 +472,6 @@ DMP_FP_RATE = 0xF0C # 240*16+12
 #GYRO FSR
 DMP_GYRO_SCALE = 0x48C # 72*16+12
 #ACCEL FSR
-#The DMP scales accel raw data internally to align 1g as 2^25.
-#To do this and output hardware unit again as configured FSR,
-#write 0x4000000 to ACC_SCALE DMP register, and write 0x40000
-#to ACC_SCALE2 DMP register.
 DMP_ACC_SCALE = 0x1E0 # 30*16+0
 DMP_ACC_SCALE2 = 0x4F4 # 79*16+4
 #EIS AUTHENTIFICATION
@@ -704,25 +700,21 @@ class ICM20948:
         #Reset the Chip 
         self.reg_config(0,ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_RESET, True)
         sleep_ms(10)
+        
         #Set Clock Auto 
         self.write(0, ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_CLOCK_AUTO)
+        
         #Put all sensor On
         self.write(0, ICM_PWR_MGMT_2, 0x00)
 
-        #Configure scales, SR, LP and get sensitivity values
-        #self.write(2, ICM_ODR_ALIGN_EN, 0x01) 
-        self.set_gyro_sample_rate()
-        self.set_gyro_low_pass(enabled=True, mode=5)
-        self.set_gyro_full_scale(2000)
-
-        self.set_acc_sample_rate()
-        self.set_acc_low_pass(enabled=True, mode=5)
-        self.set_acc_full_scale(4)
-        
-        self.set_temp_low_pass(enabled=True, mode=1)
-
         #Configure I2C Master Clock
         self.write(3, ICM_I2C_MST_CTRL, ICM_I2C_MST_CTRL_NSR | 0x07)  #I2C MSTR CLOCK = 07 = 345,6kHz
+        
+        #Activate I2C Master
+        self.reg_config(0, ICM_USER_CTRL, ICM_USER_CTRL_I2C_MST_EN, True)
+        
+        #Configure ODR
+        #self.write(2, ICM_ODR_ALIGN_EN, 0x01) 
 
         # Check if we cas access Magnetometer
         # enabling Slave 0 Read AK_WIA thought AK_I2C_ADD
@@ -730,7 +722,6 @@ class ICM20948:
         self.slave_config(0, AK_I2C_ADDR, AK_WIA2, 1, True, True, False, False, False)
         if self.read(0, ICM_EXT_SLV_SENS_DATA_00) != AK_CHIP_ID:
             self._dbg("AK09916 Magnetometer Chip Not Found... ")
-            #raise RuntimeError("Unable to find AK09916")
         else :
             self._dbg("AK09916 Magnetometer Chip Found... ")
 
@@ -740,12 +731,10 @@ class ICM20948:
         # reading result throught ICM_EXT_SLV_SENS_DATA_00
         self.slave_config(0, AK_I2C_ADDR, AK_CNTL3, 1, True, True, False, False, False,AK_CNTL3_RESET)
         while self.read(0, ICM_EXT_SLV_SENS_DATA_00) == 0x01: #Loop util reset bit remains on
-            sleep_us(100)
+            sleep_ms(50)
         self._dbg("AK09916 Magnetometer Chip Reseted... ")
         
-        #If we raised here, everything is fine so let's shut down Slave 0
-        # until we set-up wether DMP or ICM continuous readings
-        self.slave_config(0, AK_I2C_ADDR, AK_CNTL2, 1, False, False, False, False, False, AK_CNTL2_MODE_OFF)
+        #If we raised here, everything is fine
         self._ready = True
         
         #finally we start continuous ready of magnetometer
@@ -980,7 +969,7 @@ class ICM20948:
         else :
             return self._rw_buffer
 
-    #New write slave
+    #I2C Master Slave configuration
     def slave_config(self, slave, addr, reg, length, RnW, En, Swp, Dis, Grp, DO = None):
         if (slave > 4) :
             return
@@ -990,11 +979,12 @@ class ICM20948:
         i2c_slv_ctrl = ICM_I2C_SLV0_CTRL + 4 * slave
         i2c_slv_do = ICM_I2C_SLV0_DO + 4 * slave
         
-        self.write(3, i2c_slv_reg, reg)
-        
         if RnW :
             addr |= ICM_I2C_SLV_ADDR_RNW
         self.write(3, i2c_slv_addr, addr)
+        
+        if DO != None :
+            self.write(3, i2c_slv_do, DO)
             
         self.write(3, i2c_slv_reg, reg)
 
@@ -1008,19 +998,30 @@ class ICM20948:
         if Grp :
             slv_ctrl |= ICM_I2C_SLV_CTRL_REG_GROUP
         self.write(3, i2c_slv_ctrl, slv_ctrl)
-        
-        if DO != None :
-            self.write(3, i2c_slv_do, DO)
   
+        sleep_ms(50)
+        
         #Activate I2C Master so I2C_slave setup can be propagated to slave itself
-        self.reg_config(0, ICM_USER_CTRL, ICM_USER_CTRL_I2C_MST_EN, True)
+        #self.reg_config(0, ICM_USER_CTRL, ICM_USER_CTRL_I2C_MST_EN, True)
 
     #ICM Mag config when not using DMP
     def ICM_config(self):
+        
         #Enable the slave 0 to write (False) to AK_I2C magnetometer, by writing 1 byte MODE_100Hz to AK_CNTL2 REG 
         self.slave_config(0, AK_I2C_ADDR, AK_CNTL2, 1 , False, True, False, False, False, AK_CNTL2_MODE_100HZ)
+        
         #Enable the slave to read (True) from AK_ST1 to AK_ST2 (9 bytes) including magnetometer values AK_HXL 
         self.slave_config(0, AK_I2C_ADDR, AK_ST1, 9, True, True, False, False, False)
+        
+        #Configure scales, SR, LP and get sensitivity values
+        self.set_gyro_sample_rate()
+        self.set_gyro_low_pass(enabled=True, mode=5)
+        self.set_gyro_full_scale(2000)
+        self.set_acc_sample_rate()
+        self.set_acc_low_pass(enabled=True, mode=5)
+        self.set_acc_full_scale(4)        
+        self.set_temp_low_pass(enabled=True, mode=1)
+
         #Set Low Power On
         self.reg_config(0,ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_LP, True)
         
@@ -1043,7 +1044,7 @@ class ICM20948:
 
     #Switch memory bank
     def DMP_bank(self, dmp_bank):
-        if dmp_bank != self._dmp_bank :
+        if not self._dmp_bank == dmp_bank :
             self.write(0, ICM_MEM_BANK_SEL, dmp_bank)
             self._dmp_bank = dmp_bank
 
@@ -1077,9 +1078,9 @@ class ICM20948:
             data_pos += write_len
             mem_bank += 1
             start_address = 0
-            text = "\rDBG:\t ICM20948 : \tUploading DMP microcode {:.0f}%".format(100*data_pos/len(dmp_img))
+            text = "\rDBG:\t ICM20948 : \t Uploading DMP Microcode {:.0f}%".format(100*data_pos/len(dmp_img))
             print(text, end="\r")
-        self._dbg("DMP Firmware Upload Finished")
+        self._dbg("DMP Firmware Upload Successfull !")
         
     #Configure Digital Motion Processor
     def DMP_config(self):
@@ -1103,15 +1104,10 @@ class ICM20948:
         #Configure ODR to 68,75 Hz = 1100/2**4
         self.write(3, ICM_I2C_MST_ODR_CONFIG, 0x04)
 
-        #Set Auto Clock (added for debugging but already setup in init)
-        self.write(0, ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_CLOCK_AUTO)
-        
-        #Enable Accel and Gyro (added for debuggin but already setup in init)
-        self.write(0, ICM_PWR_MGMT_2, 0x40)
+        #Set Auto Clock & Enable Accel and Gyro suppressed (yet un _init_)
 
-        #Place I2C_master only in Low Power Mode
-        #self.reg_config(0, ICM_LP_CFG, ICM_LP_CFG_ACC | ICM_LP_CFG_GYRO , False)
-        self.reg_config(0, ICM_LP_CFG, ICM_LP_CFG_MST, True)
+        #Place I2C_master, Gyro and Acc in LP Mode
+        self.reg_config(0, ICM_LP_CFG | ICM_LP_CFG_ACC | ICM_LP_CFG_GYRO , True)
 
         #Disable DMP and FIFO
         self.reg_config(0,ICM_USER_CTRL, ICM_USER_CTRL_DMP_EN | ICM_USER_CTRL_FIFO_EN , False)
@@ -1142,16 +1138,13 @@ class ICM20948:
         #Set Gyroscope Sample_rate 55Hz
         self.set_gyro_sample_rate(55)
 
-        #Write the 2 byte Firmware Start Value to ICM PRGM_STRT_ADDRH/PRGM_STRT_ADDRL
-        self._buffer = bytearray(2)
-        self._buffer[0] = DMP_START_ADDRESS >> 8
-        self._buffer[1] = DMP_START_ADDRESS & 0xff
-        self.write_bytes(2, ICM_PRGM_START_ADDRH, self._buffer)
-
         #Upload DMP firmware
         self.DMP_load_firmware()
         
         #Write the 2 byte Firmware Start Value to ICM PRGM_STRT_ADDRH/PRGM_STRT_ADDRL
+        self._buffer = bytearray(2)
+        self._buffer[0] = DMP_START_ADDRESS >> 8
+        self._buffer[1] = DMP_START_ADDRESS & 0xff
         self.write_bytes(2, ICM_PRGM_START_ADDRH, self._buffer)
 
         #Set the Hardware Fix Disable register to 0x48
@@ -1161,6 +1154,7 @@ class ICM20948:
         self.write(0, ICM_SINGLE_FIFO_PRIORITY_SEL,0xE4)
         
         #Configure Acceleration in order to align acc_raw_data = 2^25 = 1g when FSR = 4g
+        # for 4g write 0x04000000, for 16g write 0x08000000
         DMP_ACC_SCALE_FACTOR = [0x04, 0x00, 0x00, 0x00]
         self.DMP_write(DMP_ACC_SCALE, DMP_ACC_SCALE_FACTOR)
         DMP_ACC_SCALE_FACTOR2 = [0x00, 0x04, 0x00, 0x00]
@@ -1581,11 +1575,9 @@ class ICM20948:
 
     #Write to DMP register       
     def DMP_write(self, register, data):
-        #Sleep Out
-        self.reg_config(0, ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_SLEEP, enable=False)
+
         reg_membank = register >> 8
-        self.DMP_bank(reg_membank)
-        
+        self.DMP_bank(reg_membank)     
         reg_address = register & 0xFF
         #self._dbg("Writing DMP Bank", hex(reg_membank),"Adress", hex(reg_address),"Data",data)
         self.write(0, ICM_MEM_START_ADDR, reg_address)
@@ -1593,8 +1585,7 @@ class ICM20948:
         
     #Read to DMP register       
     def DMP_read(self, register, length = 1):
-        #Sleep Out
-        self.reg_config(0, ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_SLEEP, enable=False)
+
         reg_membank = register >> 8
         self.DMP_bank(reg_membank)
         reg_address = register & 0xFF
@@ -1602,8 +1593,6 @@ class ICM20948:
         self.write(0, ICM_MEM_START_ADDR, reg_address)
         self._buffer = bytearray (length)
         self._bus.readfrom_mem_into(self._addr, ICM_MEM_R_W , self._buffer)
-        #Sleep Again
-        self.reg_config(0, ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_SLEEP, enable=True)
         return self._buffer
         
 
@@ -1701,8 +1690,6 @@ class ICM20948:
         self._buffer[0] = _data_out_ctl >> 8
         self._buffer[1] = _data_out_ctl & 0xFF
         self.DMP_write(DMP_DATA_OUT_CTL1, self._buffer)
-        #Write DMP_DATA_INTR to tell sensors are sending interrupt
-        self.DMP_write(DMP_DATA_INTR_CTL, self._buffer)
         #Write DATA_OUT_CTL2
         self._buffer[0] = _data_out_ctl2 >> 8
         self._buffer[1] = _data_out_ctl2 & 0xFF
@@ -1758,13 +1745,12 @@ class ICM20948:
         self.DMP_write(DMP_GYRO_SCALE, DMP_GYRO_SCALE_FACTOR)
         self._gyro_s = 1 / GYRO_SENSITIVITY_FACTOR[gyro_range] #Store sensitivity to lib
         
-    def DMP_set_gyro_sf(self, div , gyro_level) :
+    def DMP_set_gyro_sf(self, div , gyro_level = 4) :
         #gyro_level should be set to 4 regardless of fullscale, due to the addition of API dmp_icm20648_set_gyro_fsr()
-        gyro_level = 4
+
         #Read Timebase_correction_PLL register from bank 1
         pll = self.read(1, ICM_TIMEBASE_CORRECTION_PLL)
         self._gyro_sf_pll = pll
-        #self._dbg("PLL", pll)
         
         MagicConstant = 264446880937391
         MagicConstantScale = 100000
@@ -1779,7 +1765,7 @@ class ICM20948:
         else :
             self._gyro_sf = int(result)
             
-        self._dbg("SET_GYRO_FS PLL", pll, "DMP_GYRO_FS", self._gyro_sf)
+        #self._dbg("SET_GYRO_FS PLL", pll, "DMP_GYRO_SF", self._gyro_sf)
         self._buffer = bytearray(4)
         self._buffer[0] = self._gyro_sf >> 24
         self._buffer[1] = self._gyro_sf >> 16
