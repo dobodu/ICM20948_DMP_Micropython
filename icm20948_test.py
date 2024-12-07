@@ -13,7 +13,9 @@ i2c0 = I2C(0, sda=I2C0_SDA, scl=I2C0_SCL, freq = 400_000)
 #dmp = False for direct Acc/Gyr/Magn
 #dmp = True for DMP processor
 
-imu = icm20948.ICM20948(i2c0, dmp = False, debug=True)
+choice = input("Shall we use DMP (y/n) ? ")
+
+imu = icm20948.ICM20948(i2c0, dmp = True if (choice=="y") else False, debug=True)
 
 if not imu.dmp_ready :
     
