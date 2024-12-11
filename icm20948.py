@@ -1,9 +1,9 @@
 from ustruct import unpack_from
 from math import asin, atan2, degrees, radians, sqrt
-from utime import sleep_ms, sleep_us, ticks_ms, ticks_us, ticks_diff
+from utime import sleep_ms, sleep_us, ticks_ms, ticks_us, ticks_diff, localtime
 
 LIBNAME = "ICM20948"
-LIBVERSION = "0.9-6.4"
+LIBVERSION = "0.9-6.6"
 
 # This micropython library drive the TDK ICM20948 9 axis sensors
 # It can work :
@@ -131,8 +131,11 @@ ICM_DELAY_TIME_H = 0x28
 ICM_ACCEL_XOUT_H = 0x2D
 ICM_GYRO_XOUT_H = 0x33
 ICM_TEMP_OUT_H = 0x39
-ICM_EXT_SLV_SENS_DATA_00 = 0x3B # Linked to AK_ST1 (ICM) or to AK_RSV2 (DMP)
-ICM_EXT_SLV_SENS_DATA_01 = 0x3C # Linked to AK_HXL
+ICM_EXT_SLV_SENS_DATA_00 = 0x3B # Linked to AK_ST1 (0x10) or AK_RSV2 (0x03)
+ICM_EXT_SLV_SENS_DATA_01 = 0x3C # Linked to AK_HXL (0x11) or ??? (0x04)
+ICM_EXT_SLV_SENS_DATA_02 = 0x3D # Linked to AK_HXH (0x12) or AK_HXH (0x05)
+ICM_EXT_SLV_SENS_DATA_03 = 0x3E # Linked to AK_HYL (0x13) or AK_HXL (0x06)
+ICM_EXT_SLV_SENS_DATA_04 = 0x3F # Linked to AK_HYH (0x14) or AK_HYH (0x07)
 ICM_EXT_SLV_SENS_DATA_08 = 0x43 # Linked to AK_ST2
 #Add other there if needed
 ICM_FIFO_EN_1 = 0x66
@@ -1042,6 +1045,25 @@ class ICM20948:
 
 #=================== Below are all DMP related functions ==============================            
 
+    #Bugtracking
+    def bug_track(self):
+        
+        self.reg_config(0,ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_LP, True)
+        
+        while True :
+            data = self.read(0, ICM_EXT_SLV_SENS_DATA_00, 10)
+            
+            a,b,mx,my,mz = unpack_from(">2b3h",data)
+                
+            mx *= 0.15
+            my *= 0.15
+            mz *= 0.15
+            
+            print(mx, my, mz)
+            
+            sleep_ms(50)
+
+
     #Switch memory bank
     def DMP_bank(self, dmp_bank):
         if not self._dmp_bank == dmp_bank :
@@ -1100,14 +1122,15 @@ class ICM20948:
         #No need of grouped, big indian or whater,
         #    slave_config(sl, addr,       reg,      len, RnW,   En,   Swp,   Dis,   Grp,   DO)
         self.slave_config(1, AK_I2C_ADDR, AK_CNTL2, 1,   False, True, False, False, False, AK_CNTL2_MODE_SINGLE)
-        
+               
         #Configure ODR to 68,75 Hz = 1100/2**4
         self.write(3, ICM_I2C_MST_ODR_CONFIG, 0x04)
 
         #Set Auto Clock & Enable Accel and Gyro suppressed (yet un _init_)
 
-        #Place I2C_master, Gyro and Acc in LP Mode
-        self.reg_config(0, ICM_LP_CFG | ICM_LP_CFG_ACC | ICM_LP_CFG_GYRO , True)
+        #Place in LP Mode Only I2C_master and be sure ACC and GYRO are not in LP Mode
+        self.reg_config(0, ICM_LP_CFG,  ICM_LP_CFG_MST, True)
+        self.reg_config(0, ICM_LP_CFG,  ICM_LP_CFG_ACC | ICM_LP_CFG_GYRO , False)
 
         #Disable DMP and FIFO
         self.reg_config(0,ICM_USER_CTRL, ICM_USER_CTRL_DMP_EN | ICM_USER_CTRL_FIFO_EN , False)
@@ -1126,7 +1149,7 @@ class ICM20948:
         self.write(0, ICM_FIFO_EN_2, 0x00)
         
         #Turn Off data ready interrupt
-        self.reg_config(0,ICM_INT_ENABLE_1,0x1,False)
+        #self.reg_config(0,ICM_INT_ENABLE_1,0x1,False)
         
         #Reset the FIFO (see ICM_20948_reset_FIFO)
         self.write(0, ICM_FIFO_RST,0x1F)
@@ -1175,7 +1198,6 @@ class ICM20948:
         DMP_COMPAS_MOUNT_MATRIX_SCALED_ZERO = [0x00, 0x00, 0x00, 0x00]
         DMP_COMPAS_MOUNT_MATRIX_SCALED_PLUS1 = [0x09, 0x99, 0x99, 0x99]
         DMP_COMPAS_MOUNT_MATRIX_SCALED_MINUS1 = [0xF6, 0x66, 0x66, 0x67]
-        
         self.DMP_write(DMP_CPASS_MTX_00, DMP_COMPAS_MOUNT_MATRIX_SCALED_PLUS1)
         self.DMP_write(DMP_CPASS_MTX_01, DMP_COMPAS_MOUNT_MATRIX_SCALED_ZERO)
         self.DMP_write(DMP_CPASS_MTX_02, DMP_COMPAS_MOUNT_MATRIX_SCALED_ZERO)
@@ -1247,18 +1269,15 @@ class ICM20948:
         # parameter is (DMP running rate / ODR ) - 1
         # Here 1 means Compass is running half speed than DMP
         #self.DMP_odr_compass(DMP_ODR_CPASS,1)
+        self.DMP_odr_compass(DMP_ODR_CPASS,0)
+        #self.DMP_write(DMP_ODR_CNTR_CPASS_CALIBR, 0)
         
-        self.DMP_write(DMP_ODR_CPASS_CALIBR, 0)
-        self.DMP_write(DMP_ODR_CNTR_CPASS_CALIBR, 0)
-
-
         #Enable FIFO and DMP
         self.reg_config(0, ICM_USER_CTRL, ICM_USER_CTRL_DMP_EN | ICM_USER_CTRL_FIFO_EN, True)
         #Reset FIFO and DMP
         self.reg_config(0, ICM_USER_CTRL, ICM_USER_CTRL_DMP_RST, True)
         #Set Low Power on
         self.reg_config(0,ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_LP, True)
-        
         
     #Read fifo count
     def DMP_fifo_count(self):
@@ -1274,6 +1293,7 @@ class ICM20948:
         if(fcount == 0) :
             return
         #self._dbg("Processing FIFO {:.0f} bytes".format(fcount))
+        self.newtime = ticks_ms()
         #Read Header
         if (fcount < DMP_Header_Bytes) :
             return
@@ -1282,11 +1302,10 @@ class ICM20948:
             data = self.read(0, ICM_FIFO_R_W)
             header |= data << (8 - (i * 8))
         fcount -= DMP_Header_Bytes  #Decrease of Header size
-        #self._dbg("\tHeader is",hex(header))
+        self._dbg("\tHeader is",hex(header))
         #Read Header2
         header2 = 0
         if (header & DMP_DO_Ctrl_1_Header2) != 0 : #Check if header contains header 2 bit
-            #self._dbg("\tHeader_2 detected")
             if (fcount < DMP_header2_Bytes) : #Check FIFO has enough data, read again if not
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_header2_Bytes) :
@@ -1295,6 +1314,7 @@ class ICM20948:
                 data = self.read(0, ICM_FIFO_R_W)
                 header2 |= data << (8 - (i * 8))
             fcount -= DMP_header2_Bytes  #Decrease of Header 2 size
+            self._dbg("\tHeader 2 is",hex(header2))
 
         #Check bit per bit header in order
         #Acceleration
@@ -1344,7 +1364,7 @@ class ICM20948:
                 data_ordered[DMP_Pedom_Quat6_Byte_Ordering[i]]=data[i]
             mx,my,mz = unpack_from(">3h", data_ordered)
             #No need to adjust sensitivity already included in mount matrix configuration
-            self._dbg("FIFO Compass\t\tmx {:.4f}\tmy {:.4f}\tmz {:.4f}".format(mx,my,mz))
+            self._dbg("FIFO Compass\t\tmx {:.4f}\tmy {:.4f}\tmz {:.4f}\tTime {:.0f}".format(mx,my,mz,self.newtime))
             fcount -= DMP_Compass_Bytes
             
         #ALS
