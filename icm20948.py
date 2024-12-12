@@ -3,7 +3,7 @@ from math import asin, atan2, degrees, radians, sqrt
 from utime import sleep_ms, sleep_us, ticks_ms, ticks_us, ticks_diff, localtime
 
 LIBNAME = "ICM20948"
-LIBVERSION = "0.9-6.6"
+LIBVERSION = "0.9-6.7"
 
 # This micropython library drive the TDK ICM20948 9 axis sensors
 # It can work :
@@ -729,12 +729,13 @@ class ICM20948:
             self._dbg("AK09916 Magnetometer Chip Found... ")
 
         # Reset the magnetometer
-        # Enabling Slave 0 to read AK_CNTL3 throught AK_I2C_ADD
-        # and writing AK_CNTL3_RESET to DO
+        # Write Slave 0 WK_CNTL3 the Reset bt OK_CNTL3_RESET
+        # Then enable Slave 0 to read AK_CNTL3 throught AK_I2C_ADD
         # reading result throught ICM_EXT_SLV_SENS_DATA_00
-        self.slave_config(0, AK_I2C_ADDR, AK_CNTL3, 1, True, True, False, False, False,AK_CNTL3_RESET)
+        self.slave_config(0, AK_I2C_ADDR, AK_CNTL3, 1, False, True, False, False, False,AK_CNTL3_RESET)
+        self.slave_config(0, AK_I2C_ADDR, AK_CNTL3, 1, True, True, False, False, False)
         while self.read(0, ICM_EXT_SLV_SENS_DATA_00) == 0x01: #Loop util reset bit remains on
-            sleep_ms(50)
+            sleep_ms(10)
         self._dbg("AK09916 Magnetometer Chip Reseted... ")
         
         #If we raised here, everything is fine
