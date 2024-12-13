@@ -3,7 +3,7 @@ from math import asin, atan2, degrees, radians, sqrt
 from utime import sleep_ms, sleep_us, ticks_ms, ticks_us, ticks_diff, localtime
 
 LIBNAME = "ICM20948"
-LIBVERSION = "0.9-6.7"
+LIBVERSION = "0.9-6.8"
 
 # This micropython library drive the TDK ICM20948 9 axis sensors
 # It can work :
@@ -1214,15 +1214,15 @@ class ICM20948:
         DMP_B2S_MOUNT_MATRIX_SCALED_ZERO = [0x00, 0x00, 0x00, 0x00]
         DMP_B2S_MOUNT_MATRIX_SCALED_PLUS1 = [0x40, 0x00, 0x00, 0x00]
         
-        self.DMP_write(DMP_CPASS_MTX_00, DMP_B2S_MOUNT_MATRIX_SCALED_PLUS1)
-        self.DMP_write(DMP_CPASS_MTX_01, DMP_B2S_MOUNT_MATRIX_SCALED_ZERO)
-        self.DMP_write(DMP_CPASS_MTX_02, DMP_B2S_MOUNT_MATRIX_SCALED_ZERO)
-        self.DMP_write(DMP_CPASS_MTX_10, DMP_B2S_MOUNT_MATRIX_SCALED_ZERO)
-        self.DMP_write(DMP_CPASS_MTX_11, DMP_B2S_MOUNT_MATRIX_SCALED_PLUS1)
-        self.DMP_write(DMP_CPASS_MTX_12, DMP_B2S_MOUNT_MATRIX_SCALED_ZERO)
-        self.DMP_write(DMP_CPASS_MTX_20, DMP_B2S_MOUNT_MATRIX_SCALED_ZERO)
-        self.DMP_write(DMP_CPASS_MTX_21, DMP_B2S_MOUNT_MATRIX_SCALED_ZERO)
-        self.DMP_write(DMP_CPASS_MTX_22, DMP_B2S_MOUNT_MATRIX_SCALED_PLUS1)
+        self.DMP_write(DMP_B2S_MTX_00, DMP_B2S_MOUNT_MATRIX_SCALED_PLUS1)
+        self.DMP_write(DMP_B2S_MTX_01, DMP_B2S_MOUNT_MATRIX_SCALED_ZERO)
+        self.DMP_write(DMP_B2S_MTX_02, DMP_B2S_MOUNT_MATRIX_SCALED_ZERO)
+        self.DMP_write(DMP_B2S_MTX_10, DMP_B2S_MOUNT_MATRIX_SCALED_ZERO)
+        self.DMP_write(DMP_B2S_MTX_11, DMP_B2S_MOUNT_MATRIX_SCALED_PLUS1)
+        self.DMP_write(DMP_B2S_MTX_12, DMP_B2S_MOUNT_MATRIX_SCALED_ZERO)
+        self.DMP_write(DMP_B2S_MTX_20, DMP_B2S_MOUNT_MATRIX_SCALED_ZERO)
+        self.DMP_write(DMP_B2S_MTX_21, DMP_B2S_MOUNT_MATRIX_SCALED_ZERO)
+        self.DMP_write(DMP_B2S_MTX_22, DMP_B2S_MOUNT_MATRIX_SCALED_PLUS1)
    
         #Configure DMP Gyro Scaling Factor
         # @param[in] gyro_div Value written to GYRO_SMPLRT_DIV register, where
