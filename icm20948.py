@@ -3,7 +3,7 @@ from math import asin, atan2, degrees, radians, sqrt
 from utime import sleep_ms, ticks_ms, ticks_us, ticks_diff, localtime
 
 LIBNAME = "ICM20948"
-LIBVERSION = "0.9-9-1 DEEP DEBUG"
+LIBVERSION = "0.9-9-2 DEEP DEBUG"
 
 # This micropython library drive the TDK ICM20948 9 axis sensors
 # It can work :
@@ -901,7 +901,7 @@ class ICM20948:
     #Read acceleration data
     def acc(self):
         data = self.read(0,ICM_ACCEL_XOUT_H, 6)
-        ax, ay, az = unpack_from(">hhh", data)
+        ax, ay, az = unpack_from(">3h", data)
         ax *= self._acc_s
         ay *= self._acc_s
         az *= self._acc_s
@@ -914,7 +914,7 @@ class ICM20948:
     #Read gyroscope data
     def gyro(self):
         data = self.read(0, ICM_GYRO_XOUT_H, 6)
-        gx, gy, gz = unpack_from(">hhh", data)
+        gx, gy, gz = unpack_from(">3h", data)
         gx *= self._gyro_s
         gy *= self._gyro_s      
         gz *= self._gyro_s
@@ -929,13 +929,13 @@ class ICM20948:
         data = self.read(0, ICM_EXT_SLV_SENS_DATA_01, 6)
         mx, my, mz = unpack_from("<3h", data)
         mx *= self._mag_s
-        my *= self._mag_s
-        mz *= self._mag_s
+        my *= -self._mag_s # Output in ICM orientation (-)
+        mz *= -self._mag_s # Output in ICM orientation (-)
         if self._magbias_en :
             mx -= self._magbias[0]
             my -= self._magbias[1]
             mz -= self._magbias[2]
-        return mx, -my, -mz	#See orientation of AK9916 vs IMU20948
+        return mx, my, mz
 
 #===========Below are all internal communication functions ===================================
 
