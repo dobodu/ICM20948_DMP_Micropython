@@ -3,7 +3,7 @@ from math import asin, atan2, degrees, radians, sqrt
 from utime import sleep_ms, ticks_ms, ticks_us, ticks_diff, localtime
 
 LIBNAME = "ICM20948"
-LIBVERSION = "0.9-9 DEEP DEBUG"
+LIBVERSION = "0.9-9-1 DEEP DEBUG"
 
 # This micropython library drive the TDK ICM20948 9 axis sensors
 # It can work :
@@ -834,21 +834,21 @@ class ICM20948:
     def acc_cal(self, enable=True, timeout=2000):
         if enable :
             timeout *= 1000
-            magmax = list(self.acc()) # Initialise max and min lists with current values
-            magmin = magmax[:]
+            accmax = list(self.acc()) # Initialise max and min lists with current values
+            accmin = accmax[:]
             self.lasttime = ticks_us()
             while ((ticks_us() - self.lasttime) < timeout) :
                 accxyz = self.acc()
                 for x in range(3):
-                    magmax[x] = max(magmax[x], accxyz[x])
-                    magmin[x] = min(magmin[x], accxyz[x])
+                    accmax[x] = max(accmax[x], accxyz[x])
+                    accmin[x] = min(accmin[x], accxyz[x])
             self._accbias = tuple(map(lambda a, b: (a +b)/2, accmin, accmax))
             self._accbias_en = True
-            self._dbg(1, "ICM20948 : Accelerometer calibration done",self._accbias)
+            self._dbg(1, "Accelerometer calibration done",self._accbias)
         else :
             self._accbias = (0,0,0)
             self._accbias_en = False
-            self._dbg(1, "ICM20948 : Accelerometer calibration desactivated",self._accbias) 
+            self._dbg(1, "Accelerometer calibration desactivated",self._accbias) 
 
     #Calibrate gyroscope
     def gyro_cal(self, enable=True, timeout=2000):
@@ -1276,7 +1276,7 @@ class ICM20948:
     def DMP_fifo_count(self):
         data = self.read(0,ICM_FIFO_COUNTH, 2)
         count = ((data[0] & 0x1F ) << 8 ) | data[1]
-        self._dbg(2, "FIFO {:.0f} bytes".format(count))
+        self._dbg(4, "FIFO {:.0f} bytes".format(count))
         return count
 
     #Read and decode Fifo
@@ -1294,7 +1294,7 @@ class ICM20948:
             data = self.read(0, ICM_FIFO_R_W)
             header |= data << (8 - (i * 8))
         fcount -= DMP_Header_Bytes  #Decrease of Header size
-        self._dbg(2, "\tHeader is",hex(header))
+        self._dbg(4, "\tHeader is",hex(header))
         #Read Header2
         header2 = 0
         if (header & DMP_DO_Ctrl_1_Header2) != 0 : #Check if header contains header 2 bit
@@ -1306,7 +1306,7 @@ class ICM20948:
                 data = self.read(0, ICM_FIFO_R_W)
                 header2 |= data << (8 - (i * 8))
             fcount -= DMP_header2_Bytes  #Decrease of Header 2 size
-            self._dbg(2, "\tHeader 2 is",hex(header2))
+            self._dbg(4, "\tHeader 2 is",hex(header2))
         
         #Check bit per bit header in order
         #Acceleration
@@ -1351,11 +1351,11 @@ class ICM20948:
             if (fcount < DMP_Compass_Bytes) :
                 return
             data = self.read(0, ICM_FIFO_R_W, DMP_Compass_Bytes)
-            self._dbg(2, "\tCompass Raw read ",data)
+            self._dbg(4, "\tCompass Raw read ",data)
             data_ordered = bytearray(DMP_Compass_Bytes)
             for i in range(DMP_Compass_Bytes) :
                 data_ordered[DMP_Pedom_Quat6_Byte_Ordering[i]]=data[i]
-            self._dbg(2, "\tCompass PQuat6 ordered ",data_ordered)
+            self._dbg(4, "\tCompass PQuat6 ordered ",data_ordered)
             mx,my,mz = unpack_from("<3h", data_ordered)
             mx *= 0.15
             my *= 0.15
@@ -1587,7 +1587,7 @@ class ICM20948:
         for i in range(DMP_Footer_Bytes) :  #Read header (2 Bytes)
             data = self.read(0, ICM_FIFO_R_W)
             footer |= data << (8 - (i * 8))
-        self._dbg(2, "FIFO Gyro Count", footer)
+        self._dbg(4, "FIFO Gyro Count", footer)
         fcount -= DMP_Footer_Bytes
 
     #Write to DMP register       
@@ -1595,7 +1595,7 @@ class ICM20948:
         dmp_bank = register >> 8
         self.DMP_bank(dmp_bank)
         dmp_address = register & 0xFF
-        self._dbg(4, "Writing DMP Bank", hex(dmp_bank),"Adress", hex(dmp_address),"Data",bytes(data))
+        self._dbg(2, "Writing DMP Bank", hex(dmp_bank),"Adress", hex(dmp_address),"Data",bytes(data))
         self.write(0, ICM_MEM_START_ADDR, dmp_address)
         self.write_bytes(0, ICM_MEM_R_W, bytes(data))
         
@@ -1604,7 +1604,7 @@ class ICM20948:
         dmp_bank = register >> 8
         self.DMP_bank(dmp_bank)
         dmp_address = register & 0xFF
-        self._dbg(4, "Reading DMP Bank", hex(dmp_bank),"Adress", hex(dmp_address))
+        self._dbg(2, "Reading DMP Bank", hex(dmp_bank),"Adress", hex(dmp_address))
         self.write(0, ICM_MEM_START_ADDR, dmp_address)
         self._buffer = bytearray (length)
         self._bus.readfrom_mem_into(self._addr, ICM_MEM_R_W , self._buffer)
@@ -1634,7 +1634,7 @@ class ICM20948:
         android_sensor = DMP_SENSORS_2_ANDROID[DMP_SENSORS[icm_sensor]]
         #Get Android Control Bits
         android_ctl_bits = ANDROID_SENSORS_CTRL_BITS[android_sensor]
-        self._dbg(2, "Activation ICM sensor",icm_sensor, "- Android CTRL Bits", hex(android_ctl_bits))
+        self._dbg(4, "Activation ICM sensor",icm_sensor, "- Android CTRL Bits", hex(android_ctl_bits))
         #Store Android sensor to objects _android_sensor_bitmask_0 and 1
         if android_sensor < 32 :
             _bitmask = 0x1 << android_sensor
@@ -1697,22 +1697,22 @@ class ICM20948:
         #Write DATA_OUT_CTL1
         self._buffer[0] = _data_out_ctl >> 8
         self._buffer[1] = _data_out_ctl & 0xFF
-        self._dbg(4, "DATA_OUT_CTRL1", hex(_data_out_ctl))
+        self._dbg(2, "DATA_OUT_CTRL1", hex(_data_out_ctl))
         self.DMP_write(DMP_DATA_OUT_CTL1, self._buffer)
         #Write DATA_OUT_CTL2
         self._buffer[0] = _data_out_ctl2 >> 8
         self._buffer[1] = _data_out_ctl2 & 0xFF
-        self._dbg(4, "DATA_OUT_CTRL2", hex(_data_out_ctl2))
+        self._dbg(2, "DATA_OUT_CTRL2", hex(_data_out_ctl2))
         self.DMP_write(DMP_DATA_OUT_CTL2, self._buffer)
         #Write DATA_RDY_STATUS
         self._buffer[0] = _data_rdy_status >> 8
         self._buffer[1] = _data_rdy_status & 0xFF
-        self._dbg(4, "DATA_RDY_STATUS", hex(_data_rdy_status))
+        self._dbg(2, "DATA_RDY_STATUS", hex(_data_rdy_status))
         self.DMP_write(DMP_DATA_RDY_STATUS, self._buffer)
         #Write MOTION_EVENT_CTL
         self._buffer[0] = _inv_event_ctl >> 8
         self._buffer[1] = _inv_event_ctl & 0xFF
-        self._dbg(4, "INV_EVENT_CTRL", hex(_inv_event_ctl))
+        self._dbg(2, "INV_EVENT_CTRL", hex(_inv_event_ctl))
         self.DMP_write(DMP_DATA_MOTION_EVENT_CTRL, self._buffer)
         
         
@@ -1792,7 +1792,7 @@ class ICM20948:
         self._buffer[1] = self._gyro_sf >> 16
         self._buffer[2] = self._gyro_sf >> 8
         self._buffer[3] = self._gyro_sf & 0xFF
-        self._dbg(4, "DMP_SET_GYRO_SF PLL", pll, "DMP_GYRO_SF", self._gyro_sf)
+        self._dbg(2, "DMP_SET_GYRO_SF PLL", pll, "DMP_GYRO_SF", self._gyro_sf)
         self.DMP_write(DMP_GYRO_SF, self._buffer)
         
         
