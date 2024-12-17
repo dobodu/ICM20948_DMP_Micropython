@@ -3,7 +3,7 @@ from math import asin, atan2, degrees, radians, sqrt
 from utime import sleep_ms, ticks_ms, ticks_us, ticks_diff, localtime
 
 LIBNAME = "ICM20948"
-LIBVERSION = "0.99-5 DEEP DEBUG"
+LIBVERSION = "0.99-6 DEEP DEBUG"
 
 # This micropython library drive the TDK ICM20948 9 axis sensors
 # It can work :
@@ -590,15 +590,6 @@ DMP_Motion_Event_Control_Pickup = 0x0010
 DMP_Motion_Event_Control_Geomag = 0x0008
 DMP_Motion_Event_Control_Bring_Look_To_See = 0x0004
 DMP_Motion_Event_Control_Activity_Recog_Pedom_Accel = 0x0002
-
-#DMP Byte Ordering
-DMP_Quat_Byte_Ordering = [3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 13, 12]
-DMP_Quat9_Byte_Ordering = [3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 13, 12] # Also used for Geomag
-DMP_Quat6_Byte_Ordering = [3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8] # Also used for Gyro_Calibr, Compass_Calibr
-DMP_Pedom_Quat6_Byte_Ordering = [1, 0, 3, 2, 5, 4] # Also used for Raw_Accel, Compass
-DMP_Raw_Gyro_Byte_Ordering = [1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10]
-DMP_Activity_Recognition_Byte_Ordering = [0, 1, 5, 4, 3, 2]
-DMP_Secondary_On_Off_Byte_Ordering = [1, 0]
 
 DMP_SENSORS_2_ANDROID = {
     0 : 1, 1 : 4, 2 : 42, 3 : 43, 4 : 14, 5 : 16, 6 : 47, 7 : 18, 8 : 19,
@@ -1308,9 +1299,7 @@ class ICM20948:
             if (fcount < DMP_Raw_Accel_Bytes) :
                 return
             self._data = self.read(0, ICM_FIFO_R_W, DMP_Raw_Accel_Bytes)
-            for i in range(DMP_Raw_Accel_Bytes) :
-                self._data_ordered[DMP_Pedom_Quat6_Byte_Ordering[i]] = self._data[i]
-            ax,ay,az = unpack_from("<3h", self._data_ordered)
+            ax,ay,az = unpack_from(">3h", self._data)
             ax *= self._acc_s #adjust result with sensiticity
             ay *= self._acc_s
             az *= self._acc_s
@@ -1324,9 +1313,7 @@ class ICM20948:
             if (fcount < (DMP_Raw_Gyro_Bytes + DMP_Gyro_Bias_Bytes)) :
                 return
             self._data = self.read(0, ICM_FIFO_R_W, DMP_Raw_Gyro_Bytes + DMP_Gyro_Bias_Bytes)
-            for i in range(DMP_Raw_Gyro_Bytes + DMP_Gyro_Bias_Bytes) :
-                self._data_ordered[DMP_Raw_Gyro_Byte_Ordering[i]] = self._data[i]
-            gx,gy,gz,gbx,gby,gbz = unpack_from("<6h", self._data_ordered)
+            gx,gy,gz,gbx,gby,gbz = unpack_from(">6h", self._data)
             gx *= self._gyro_s #adjust result with sensiticity
             gy *= self._gyro_s
             gz *= self._gyro_s
@@ -1341,9 +1328,7 @@ class ICM20948:
             if (fcount < DMP_Compass_Bytes) :
                 return
             self._data = self.read(0, ICM_FIFO_R_W, DMP_Compass_Bytes)
-            for i in range(DMP_Compass_Bytes) :
-                self._data_ordered[DMP_Pedom_Quat6_Byte_Ordering[i]] = self._data[i]
-            mx,my,mz = unpack_from("<3h", self._data_ordered)
+            mx,my,mz = unpack_from(">3h", self._data)
             mx *= self._mag_s
             my *= self._mag_s
             mz *= self._mag_s
@@ -1368,9 +1353,7 @@ class ICM20948:
             if (fcount < DMP_Quat6_Bytes) :
                 return
             self._data = self.read(0, ICM_FIFO_R_W, DMP_Quat6_Bytes)
-            for i in range(DMP_Quat6_Bytes) :
-                self._data_ordered[DMP_Quat6_Byte_Ordering[i]] = self._data[i]
-            q1,q2,q3 = unpack_from("<3l", self._data_ordered)
+            q1,q2,q3 = unpack_from(">3l", self._data)
             q1 /= 2**30  # The quaternion data is scaled by 2^30.
             q2 /= 2**30
             q3 /= 2**30
@@ -1385,9 +1368,7 @@ class ICM20948:
             if (fcount < DMP_Quat9_Bytes) :
                 return
             self._data = self.read(0, ICM_FIFO_R_W, DMP_Quat9_Bytes)
-            for i in range(DMP_Quat9_Bytes) :
-                self._data_ordered[DMP_Quat9_Byte_Ordering[i]] = self._data[i]
-            q1,q2,q3,acc = unpack_from("<3lh", self._data_ordered)
+            q1,q2,q3,acc = unpack_from(">3lh", self._data)
             q1 /= 2**30  # The quaternion data is scaled by 2^30.
             q2 /= 2**30
             q3 /= 2**30
@@ -1402,9 +1383,7 @@ class ICM20948:
             if (fcount < DMP_Pedom_Quat6_Bytes) :
                 return
             self._data = self.read(0, ICM_FIFO_R_W, DMP_Pedom_Quat6_Bytes)
-            for i in range(DMP_Pedom_Quat6_Bytes) :
-                self._data_ordered[DMP_Pedom_Quat6_Byte_Ordering[i]] = self._data[i]
-            q1,q2,q3 = unpack_from("<3h", self._data_ordered)
+            q1,q2,q3 = unpack_from(">3h", self._data)
             q1 /= 2**30  # The quaternion data is scaled by 2^30.
             q2 /= 2**30
             q3 /= 2**30
@@ -1419,9 +1398,7 @@ class ICM20948:
             if (fcount < DMP_Geomag_Bytes) :
                 return
             self._data = self.read(0, ICM_FIFO_R_W, DMP_Geomag_Bytes)
-            for i in range(DMP_Geomag_Bytes) :
-                self._data_ordered[DMP_Quat9_Byte_Ordering[i]] = self._data[i]
-            q1,q2,q3,acc = unpack_from("<3lh", self._data_ordered)
+            q1,q2,q3,acc = unpack_from(">3lh", self._data)
             q1 /= 2**30
             q2 /= 2**30
             q3 /= 2**30
@@ -1438,7 +1415,6 @@ class ICM20948:
             self._data = self.read(0, ICM_FIFO_R_W, DMP_Pressure_Bytes)
             press = self._data[0] | (self._data[1] << 8) | (self._data[2] << 16)
             temp = self._data[3] | (self._data[4] << 8) | (self._data[5] << 16)
-            self._dbg(8, "FIFO Press&Temp\tPress", press, "\tTemp",temp)
             self._dbg(8, "FIFO Press&Temp\tPress {:.1f}\tTemp {:.1f}".format(press,temp))
             fcount -= DMP_Pressure_Bytes
         
@@ -1449,8 +1425,11 @@ class ICM20948:
             if (fcount < DMP_Gyro_Calibr_Bytes) :
                 return
             self._data = self.read(0, ICM_FIFO_R_W, DMP_Gyro_Calibr_Bytes)
-            #To do process
-            self._dbg(8, "FIFO Gyro Calibration : Skipped...")
+            gx_cal, gy_cal, gz_cal = unpack_from(">3l",self._data)
+            gx_cal /= 2**30
+            gy_cal /= 2**30
+            gz_cal /= 2**30
+            self._dbg(8, "FIFO Gyro Calibration\tgxc {:.4f}\tgyc {:.4f}\tgzc {:.4f}".format(gx_cal, gy_cal ,gz_cal))
             fcount -= DMP_Gyro_Calibr_Bytes
         
         #Compass calibration 
@@ -1460,13 +1439,11 @@ class ICM20948:
             if (fcount < DMP_Compass_Calibr_Bytes) :
                 return
             self._data = self.read(0, ICM_FIFO_R_W, DMP_Compass_Calibr_Bytes)
-            for i in range(DMP_Compass_Calibr_Bytes) :
-                self._data_ordered[DMP_Quat6_Byte_Ordering[i]] = self._data[i]
-            q1,q2,q3 = unpack_from("<3l", self._data_ordered)
-            q1 /= 2**30
-            q2 /= 2**30
-            q3 /= 2**30
-            self._dbg(8, "FICO Compass Calibration\tq1 {:.4f}\tq2 {:.4f}\tq3 {:.4f}".format(q1,q2,q3))
+            mx_cal, my_cal ,mz_cal = unpack_from(">3l", self._data)
+            mx_cal /= 2**30
+            my_cal /= 2**30
+            mz_cal /= 2**30
+            self._dbg(8, "FICO Compass Calibration\tmxc {:.4f}\tmyc {:.4f}\tmzc {:.4f}".format(mx_cal, my_cal ,mz_cal))
             fcount -= DMP_Compass_Calibr_Bytes
         
         #Steps
@@ -1546,6 +1523,7 @@ class ICM20948:
             if (fcount < DMP_Activity_Recognition_Bytes) :
                 return
             self._data = self.read(0, ICM_FIFO_R_W, DMP_Activity_Recognition_Bytes)
+            act_a, act_b, act_c = unpack_from(">2bl", self.data)
             #To do process
             self._dbg(8, "FIFO Activity Recognition not implemented")
             fcount -= DMP_Activity_Recognition_Bytes
@@ -1557,8 +1535,9 @@ class ICM20948:
             if (fcount < DMP_Secondary_On_Off_Bytes) :
                 return
             self._data = self.read(0, ICM_FIFO_R_W, DMP_Secondary_On_Off_Bytes)
+            sec_onoff = unpack_from(">h", self._data)
             #To do process
-            self._dbg(8, "FIFO Secondary On-Off not implemented")
+            self._dbg(8, "FIFO Secondary On-Off not implemented", hex(sec_onoff))
             fcount -= DMP_Secondary_On_Off_Bytes
         
         #Finally process the footer
