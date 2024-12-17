@@ -3,7 +3,7 @@ from math import asin, atan2, degrees, radians, sqrt
 from utime import sleep_ms, ticks_ms, ticks_us, ticks_diff, localtime
 
 LIBNAME = "ICM20948"
-LIBVERSION = "0.99-4 DEEP DEBUG"
+LIBVERSION = "0.99-5 DEEP DEBUG"
 
 # This micropython library drive the TDK ICM20948 9 axis sensors
 # It can work :
@@ -935,8 +935,8 @@ class ICM20948:
         data = self.read(0, ICM_EXT_SLV_SENS_DATA_01, 6)
         mx, my, mz = unpack_from("<3h", data)
         mx *= self._mag_s
-        my *= -self._mag_s # Output in ICM orientation (-)
-        mz *= -self._mag_s # Output in ICM orientation (-)
+        my *= self._mag_s
+        mz *= self._mag_s
         if self._magbias_en :
             mx -= self._magbias[0]
             my -= self._magbias[1]
@@ -1391,6 +1391,7 @@ class ICM20948:
             q1 /= 2**30  # The quaternion data is scaled by 2^30.
             q2 /= 2**30
             q3 /= 2**30
+            acc /= 2**16
             self._dbg(8, "FIFO Quaternion_9\tq1 {:.4f}\tq2 {:.4f}\tq3 {:.4f}\taccuracy {:.4f}".format(q1,q2,q3,acc))
             fcount -= DMP_Quat9_Bytes
             
@@ -1424,6 +1425,7 @@ class ICM20948:
             q1 /= 2**30
             q2 /= 2**30
             q3 /= 2**30
+            acc /= 2**16
             self._dbg(8, "FIFO Geomag\tq1 {:.4f}\tq2 {:.4f}\tq3 {:.4f}\taccuracy {:.4f}".format(q1,q2,q3,acc))
             fcount -= DMP_Geomag_Bytes
             
@@ -1461,7 +1463,7 @@ class ICM20948:
             for i in range(DMP_Compass_Calibr_Bytes) :
                 self._data_ordered[DMP_Quat6_Byte_Ordering[i]] = self._data[i]
             q1,q2,q3 = unpack_from("<3l", self._data_ordered)
-            q1 /= 2**30  # To check
+            q1 /= 2**30
             q2 /= 2**30
             q3 /= 2**30
             self._dbg(8, "FICO Compass Calibration\tq1 {:.4f}\tq2 {:.4f}\tq3 {:.4f}".format(q1,q2,q3))
