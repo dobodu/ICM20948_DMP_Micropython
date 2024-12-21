@@ -31,7 +31,7 @@ The chip is in fact composed of 3 chips
 
 The ICM chip bloc diagram is 
 
-![](C:\Users\Ludovic\Desktop\Micropython\ICM20948\ressources\bloc%20icm20948.png)
+<img title="" src="/ressources/bloc%20icm20948.png">
 
 So we understand quickly
 
