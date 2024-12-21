@@ -17,7 +17,7 @@ The library is a single bloc of code, handling all needed parameters that were s
 
 ## About the chip itself...
 
-<img title="" src="file:///C:/Users/Ludovic/Desktop/Micropython/ICM20948/ressources/chip%20icm20948.png" alt="" width="239" data-align="center">
+<img title="" src="/ressources/chip%20icm20948.png" alt="" width="239" data-align="center">
 
 The chip is in fact composed of 3 chips 
 
