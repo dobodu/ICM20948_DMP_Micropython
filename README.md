@@ -17,7 +17,7 @@ The library is a single bloc of code, handling all needed parameters that were s
 
 ## About the chip itself...
 
-<img title="" src="/ressources/chip%20icm20948.png" alt="" width="239" data-align="center">
+<img title="" src="/ressources/icm20948_chip.png" alt="" width="239" data-align="center">
 
 The chip is in fact composed of 3 chips 
 
@@ -31,7 +31,7 @@ The chip is in fact composed of 3 chips
 
 The ICM chip bloc diagram is 
 
-<img title="" src="/ressources/bloc%20icm20948.png">
+<img title="" src="/ressources/icm20948_bloc.png" alt="" width="" data-align="center">>
 
 So we understand quickly
 
@@ -43,7 +43,7 @@ So we understand quickly
 
 We must be aware that the two sensors chips (ICM and AK09916), while mounted in the same package, do not share the same orientation.
 
-| ![](C:\Users\Ludovic\Desktop\Micropython\ICM20948\ressources\orientation_magnetometer_gyroscope.png) | ![](C:\Users\Ludovic\Desktop\Micropython\ICM20948\ressources\orientation_compass.png) |
+| !<img title="" src="/ressources/orientation_magnetometer_gyroscope.png"> | !<img title="" src="/ressources/orientation_compass.png"> |
 | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 
 Considering Accelerometer orthonomous reference (left) the compass orthonomous reference (right) is inverted for Y and Z axis. we can write :
