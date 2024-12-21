@@ -56,12 +56,8 @@ MAG_z_ICM = - MAG_z_AK9916
 
 or in a matrix way
 
-MAG_ICM =  [[1   0    0]  . MAG_AK9916
-            [0  -1   0]
-            [0   0  -1]]
-
-
-
+MAG_ICM =  [[1   0    0][0  -1   0][0   0  -1]]  . MAG_AK9916
+         
 ## DMP way of working
 
 DMP Processor need to be told what kind of report is expected.
@@ -69,7 +65,7 @@ The library itself convert the report we ask into a DMP understandable report na
 
 List of DMP reports authorized with DMP firmware are listed below. The controls bits is the internal code we need to write to DMP memory (DMP_DO_Ctrl_1) in order to activate the corresponding report. This code is in fact, the header of the expected report message
 
-<img title="" src="/ressources/sensors_ctrl_bits.png" alt="" width="550">
+<img title="" src="/ressources/sensors_ctrl_bits.png">
 
 As an example, when requiring Gyroscope sensor, we need to write 0x4048.
 This value corresponds to 0x4000 + 0x0040 + 0x0008 = Gyroscope + Gyroscope Calibration + Secondary Message (we'll explain later) as referenced in the chart below.
