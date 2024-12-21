@@ -9,7 +9,7 @@
 ## Greetings first
 
 A spécial thanks to Paul CLARK from Sparkfun, his C/C++ Arduino library was a real inspiration to gain the full micropython library working.
-You ought to give a look at [GitHub - sparkfun/SparkFun_ICM-20948_ArduinoLibrary: Arduino support for ICM_20948 w/ portable C backbone](https://github.com/sparkfun/SparkFun_ICM-20948_ArduinoLibrary))
+You ought to give a look at [SparkFun_ICM-20948_ArduinoLibrary](https://github.com/sparkfun/SparkFun_ICM-20948_ArduinoLibrary))
 
 The library is a single bloc of code, handling all needed parameters that were spread away in several C or C++ library, and is fully documented
 in order that everyone interested might complete my piece of work. As reverse engineering was a bit time consumming, I wanted this readme to be
@@ -57,7 +57,9 @@ MAG_z_ICM = - MAG_z_AK9916
 or in a matrix way
 
 MAG_ICM =  [[1   0    0][0  -1   0][0   0  -1]]  . MAG_AK9916
-         
+
+
+
 ## DMP way of working
 
 DMP Processor need to be told what kind of report is expected.
@@ -143,7 +145,7 @@ debug is optionnal but might help further developments
 > 
 > bit 4 : 16 : DMP Register / I2C debug (Outputs bus communication)
 
-### 
+
 
 # Library usage
 
