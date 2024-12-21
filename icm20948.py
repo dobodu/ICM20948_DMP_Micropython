@@ -3,7 +3,7 @@ from math import asin, atan2, degrees, radians, sqrt
 from utime import sleep_ms, ticks_ms, ticks_us, ticks_diff, localtime
 
 LIBNAME = "ICM20948"
-LIBVERSION = "0.99-6 DEEP DEBUG"
+LIBVERSION = "0.99-7"
 
 # This micropython library drive the TDK ICM20948 9 axis sensors
 # It can work :
@@ -53,13 +53,13 @@ LIBVERSION = "0.99-6 DEEP DEBUG"
 #  ACTIVITY_CLASSIFICATON        NO          Missing ANDROID_SENSORS_CTRL_BITS
 #  STEP_DETECTOR                 NO          Missing header2 ?
 #  STEP_COUNTER                  NO          Missing header2 ?
-#  GAME_ROTATION_VECTOR          ?
-#  ROTATION_VECTOR               ?
-#  GEOM_ROTATION_VECTOR :        ?
-#  GEOM_FIELD :                  ?
-#  GRAVITY :                     ?
-#  LINEAR_ACCELERATION           ?
-#  ORIENTATION                   ?
+#  GAME_ROTATION_VECTOR          OK
+#  ROTATION_VECTOR               OK
+#  GEOM_ROTATION_VECTOR :        OK
+#  GEOM_FIELD :                  OK
+#  GRAVITY :                     OK
+#  LINEAR_ACCELERATION           OK
+#  ORIENTATION                   OK
 #
 # To do :
 #
@@ -642,6 +642,8 @@ class ICM20948:
         
         #Initialize class variables
         self._bus = i2c
+        self._addr = addr
+        self._dmp = dmp
         self._debug = debug
         self._ready = False
         self._dmp_ready = False       
@@ -779,13 +781,39 @@ class ICM20948:
         rate = int((1125.0 / rate) - 1)
         self.write(2, ICM_ACCEL_SMPLRT_DIV_1, rate >> 8)
         self.write(2, ICM_ACCEL_SMPLRT_DIV_2, rate & 0xff)
-
-    #Set the accelerometer fulls cale range to +- the supplied value
+        
+    #Set the acceleration full scale range to +- supplied value
     def set_acc_full_scale(self, scale=16):
+        
+        #Set Acc Full scale in ICM Registers
         value = self.read(2, ICM_ACCEL_CONFIG_1) & ICM_ACCEL_CONFIG_1_ACCEL_FS_SEL_MASK
-        value |= ACC_SCALE_RANGE[scale] << 1
+        acc_range = ACC_SCALE_RANGE[scale]
+        value |= acc_range << 1
         self.write(2, ICM_ACCEL_CONFIG_1, value)
         self._acc_s = self.get_acc_sensitivity
+        #Set DMP Acc Full scale in DMP Memory
+        if self._dmp :
+            # 2 : 2^25 // 4 : 2^26 // 8 : 2^27 // 16 : 2^28
+            # with ACC_SCALE_RANGE = {2: 0b00, 4: 0b01, 8: 0b10, 16: 0b11}
+            # DMP_ACC_SCALE_FACTOR = bytearray([0x04, 0x00, 0x00, 0x00]) when FSR is 4g
+            DMP_ACC_SCALE_FACTOR = bytearray(4)
+            value = 0x01 << (25 + acc_range)
+            DMP_ACC_SCALE_FACTOR[0] = value >> 24
+            DMP_ACC_SCALE_FACTOR[1] = value >> 16
+            DMP_ACC_SCALE_FACTOR[2] = value >> 8
+            DMP_ACC_SCALE_FACTOR[3] = value & 0xFF
+            self.DMP_write(DMP_ACC_SCALE, DMP_ACC_SCALE_FACTOR)
+            #In order to output hardaware unit data as configured FSR write
+            # DMP_ACC_SCALE2_FACTOR = bytearray([0x00, 0x04, 0x00, 0x00]) when FSR  is 4g
+            DMP_ACC_SCALE2_FACTOR = bytearray(4)
+            value = value >> 8
+            DMP_ACC_SCALE2_FACTOR[0] = value >> 24
+            DMP_ACC_SCALE2_FACTOR[1] = value >> 16
+            DMP_ACC_SCALE2_FACTOR[2] = value >> 8
+            DMP_ACC_SCALE2_FACTOR[3] = value & 0xFF
+            self.DMP_write(DMP_ACC_SCALE2, DMP_ACC_SCALE2_FACTOR)              
+        #Finally Adjust sensitivity    
+        self._gyro_s = 1 / ACC_SENSITIVITY_FACTOR[acc_range]
 
     #Configure the accelerometer low pass filter
     def set_acc_low_pass(self, enabled=True, mode=5):
@@ -801,13 +829,26 @@ class ICM20948:
         # So Gyro_sample_rate_divider = (1125 / sample_rate) - 1
         rate = int((1125.0 / rate) - 1)
         self.write(2, ICM_GYRO_SMPLRT_DIV, rate & 0xff)
-
-    #Set the gyro full scale range to +- supplied value
+       
+    #Set the gyro full scale range to +- supplied value (ICM and DMP Version)
     def set_gyro_full_scale(self, scale=250):
+        #Set Gyro Full scale in ICM Registers
         value = self.read(2, ICM_GYRO_CONFIG_1) & ICM_GYRO_CONFIG_1_GYRO_FS_SEL_MASK
-        value |= GYRO_SCALE_RANGE[scale] << 1
+        gyro_range = GYRO_SCALE_RANGE[scale]
+        value |= gyro_range << 1
         self.write(2, ICM_GYRO_CONFIG_1, value)
         self._gyro_s = self.get_gyro_sensitivity
+        #Set DMP Gyro Full scale in DMP Memory
+        if self._dmp :   
+            DMP_GYRO_SCALE_FACTOR = bytearray(4)
+            value = 0x01 << (25 + gyro_range)
+            DMP_GYRO_SCALE_FACTOR[0] = value >> 24
+            DMP_GYRO_SCALE_FACTOR[1] = value >> 16
+            DMP_GYRO_SCALE_FACTOR[2] = value >> 8
+            DMP_GYRO_SCALE_FACTOR[3] = value & 0xFF
+            self.DMP_write(DMP_GYRO_SCALE, DMP_GYRO_SCALE_FACTOR)
+        #Finally Adjust sensitivity    
+        self._gyro_s = 1 / GYRO_SENSITIVITY_FACTOR[gyro_range]
 
     #Configure the gyro low pass filter
     def set_gyro_low_pass(self, enabled=True, mode=5):
@@ -1122,10 +1163,12 @@ class ICM20948:
         self.reg_config(0,ICM_USER_CTRL, ICM_USER_CTRL_DMP_EN | ICM_USER_CTRL_FIFO_EN , False)
         
         #Set Gyro full scale range 2000 dps
-        self.set_gyro_full_scale(2000) # Global setup below
+        #self.set_gyro_full_scale(2000) # Global setup below
+        #Thing are now done after DMP setup
         
         #Set Acc full scale range 4g
-        self.set_acc_full_scale(4)  # Global setup below
+        #self.set_acc_full_scale(4)  # Global setup below
+        #Thing are now done after DMP setup
         
         #Enable Gyro DLPF
         self.set_gyro_low_pass(True, mode=0)
@@ -1162,10 +1205,11 @@ class ICM20948:
         
         #Configure Acceleration in order to align acc_raw_data = 2^25 = 1g when FSR = 4g
         # for 4g write 0x04000000, for 16g write 0x08000000
-        DMP_ACC_SCALE_FACTOR = [0x04, 0x00, 0x00, 0x00]
-        self.DMP_write(DMP_ACC_SCALE, DMP_ACC_SCALE_FACTOR)
-        DMP_ACC_SCALE_FACTOR2 = [0x00, 0x04, 0x00, 0x00]
-        self.DMP_write(DMP_ACC_SCALE2, DMP_ACC_SCALE_FACTOR2)
+        #DMP_ACC_SCALE_FACTOR = [0x04, 0x00, 0x00, 0x00]
+        #self.DMP_write(DMP_ACC_SCALE, DMP_ACC_SCALE_FACTOR)
+        #DMP_ACC_SCALE_FACTOR2 = [0x00, 0x04, 0x00, 0x00]
+        #self.DMP_write(DMP_ACC_SCALE2, DMP_ACC_SCALE_FACTOR2)
+        self.set_acc_full_scale(4)
         
         #Configure Compass Mount Matrix
         #As explained on top Matrix will be
@@ -1215,8 +1259,9 @@ class ICM20948:
         self.DMP_set_gyro_sf(19,3) #  19 = 55Hz, 3 = 2000dps
         
         #Configure DMP Gyro Full scale to 2000 dps
-        DMP_GYRO_SCALE_FACTOR = [0x10, 0x00, 0x00, 0x00]
-        self.DMP_write(DMP_GYRO_SCALE, DMP_GYRO_SCALE_FACTOR)
+        #DMP_GYRO_SCALE_FACTOR = [0x10, 0x00, 0x00, 0x00]
+        #self.DMP_write(DMP_GYRO_SCALE, DMP_GYRO_SCALE_FACTOR)
+        self.set_gyro_full_scale(2000)
         
         #Configure Acceleration Only Gains
         # 15252014 (225Hz) 30504029 (112Hz) 61117001 (56Hz)
@@ -1687,45 +1732,6 @@ class ICM20948:
         
         #Set Low Power on
         #self.reg_config(0,ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_LP, True)
-                
-    #Configure DMP Acc Full scale the same way as ICM20948 does but directly to DMP   
-    def DMP_set_acc_full_scale(self, scale=4):
-        # 2 : 2^25 // 4 : 2^26 // 8 : 2^27 // 16 : 2^28
-        # with ACC_SCALE_RANGE = {2: 0b00, 4: 0b01, 8: 0b10, 16: 0b11}
-        # DMP_ACC_SCALE_FACTOR = bytearray([0x04, 0x00, 0x00, 0x00]) when FSR is 4g
-        DMP_ACC_SCALE_FACTOR = bytearray(4)
-        acc_range = ACC_SCALE_RANGE[scale]
-        value = 0x01 << (25 + acc_range)
-        DMP_ACC_SCALE_FACTOR[0] = value >> 24
-        DMP_ACC_SCALE_FACTOR[1] = value >> 16
-        DMP_ACC_SCALE_FACTOR[2] = value >> 8
-        DMP_ACC_SCALE_FACTOR[3] = value & 0xFF
-        self.DMP_write(DMP_ACC_SCALE, DMP_ACC_SCALE_FACTOR)
-        self._acc_s = 1 / ACC_SENSITIVITY_FACTOR[acc_range]  #Store sensitivity to lib
-        #In order to output hardaware unit data as configured FSR write
-        # DMP_ACC_SCALE2_FACTOR = bytearray([0x00, 0x04, 0x00, 0x00]) when FSR  is 4g
-        DMP_ACC_SCALE2_FACTOR = bytearray(4)
-        value = value >> 8
-        DMP_ACC_SCALE2_FACTOR[0] = value >> 24
-        DMP_ACC_SCALE2_FACTOR[1] = value >> 16
-        DMP_ACC_SCALE2_FACTOR[2] = value >> 8
-        DMP_ACC_SCALE2_FACTOR[3] = value & 0xFF
-        self.DMP_write(DMP_ACC_SCALE2, DMP_ACC_SCALE2_FACTOR)        
-    
-    #Configure DMP Gyro Full scale the same way as ICM20948 does but directly to DMP   
-    def DMP_set_gyro_full_scale(self, scale=250):
-        # 250dps : 2^25 // 500dps : 2^26 // 1000dps : 2^27 // 2000dps : 2^28
-        # with GYRO_SCALE_RANGE = {250: 0b00, 500: 0b01, 1000: 0b10, 2000: 0b11}
-        # DMP_GRO_SCALE_FACTOR = bytearray([0x02, 0x00, 0x00, 0x00]) fo scale = 250 
-        DMP_GYRO_SCALE_FACTOR = bytearray(4)
-        gyro_range = GYRO_SCALE_RANGE[scale]
-        value = 0x01 << (25 + gyro_range)
-        DMP_GYRO_SCALE_FACTOR[0] = value >> 24
-        DMP_GYRO_SCALE_FACTOR[1] = value >> 16
-        DMP_GYRO_SCALE_FACTOR[2] = value >> 8
-        DMP_GYRO_SCALE_FACTOR[3] = value & 0xFF
-        self.DMP_write(DMP_GYRO_SCALE, DMP_GYRO_SCALE_FACTOR)
-        self._gyro_s = 1 / GYRO_SENSITIVITY_FACTOR[gyro_range] #Store sensitivity to lib
         
     def DMP_set_gyro_sf(self, div , gyro_level = 4) :
         #gyro_level should be set to 4 regardless of fullscale, due to the addition of API dmp_icm20648_set_gyro_fsr()
