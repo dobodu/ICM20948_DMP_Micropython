@@ -104,7 +104,7 @@ Once we have done all this, the DMP processsor is ready to output message to the
 
 The library handles does not handle all the sensors available in the DMP. Only a few of them can be processed, the list is given below with the correspondance between the sensors we handle and the android sensors of DMP.
 
-### <img title="" src="file:///C:/Users/Ludovic/Desktop/Micropython/ICM20948/ressources/icm_to_android.png" alt="" width="780">
+<img title="" src="/ressources/icm_to_android.png" alt="" width="780">
 
 
 
@@ -149,7 +149,7 @@ debug is optionnal but might help further developments
 
 # Library usage
 
-<h2 align="left">Non DMP way</h2>
+## Non DMP way
 
 ```
 imu.gyro_cal()
