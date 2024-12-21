@@ -19,7 +19,7 @@ the most completed I could.
 
 ## About the chip itself...
 
-<img title="" src="/ressources/icm20948_chip.png" alt="" width="239" data-align="center">
+<img title="" src="/ressources/icm20948_chip.png">
 
 The chip is in fact composed of 3 chips 
 
@@ -33,7 +33,7 @@ The chip is in fact composed of 3 chips
 
 The ICM chip bloc diagram is 
 
-<img title="" src="/ressources/icm20948_bloc.png" alt="" width="" data-align="center">>
+<img title="" src="/ressources/icm20948_bloc.png">
 
 So we understand quickly
 
@@ -70,11 +70,11 @@ List of DMP reports authorized with DMP firmware are listed below. The controls 
 As an example, when requiring Gyroscope sensor, we need to write 0x4048.
 This value corresponds to 0x4000 + 0x0040 + 0x0008 = Gyroscope + Gyroscope Calibration + Secondary Message (we'll explain later) as referenced in the chart below.
 
-<img title="" src="file:///C:/Users/Ludovic/Desktop/Micropython/ICM20948/ressources/reports_1_ctrl_bits.png" alt="" width="439">
+<img title="" src="file:///C:/Users/Ludovic/Desktop/Micropython/ICM20948/ressources/reports_1_ctrl_bits.png">
 
 We will also need to detail what is the content we expect in the secondary message, by writing the appropriate value to DMP memory (DMP_DO_Ctrl_2).  In our example, we'd better write 0x2000 in order to receive the compass accuracy message.
 
-<img title="" src="/ressources/reports_2_ctrl_bits.png" alt="" width="439">
+<img title="" src="/ressources/reports_2_ctrl_bits.png">
 
 All this selection stuff if automaticaly done by the DMP_enable_sensor function and rely on importants parameter as 
 
@@ -82,17 +82,17 @@ INV_NEEDS_ACCEL_MASK0 =  0b11100010100111101000111000001010
 
 This bit line is in fact an image of the following chart
 
-<img title="" src="/ressources/mask_needed.png" alt="" width="439">
+<img title="" src="/ressources/mask_needed.png">
 
 Explanation won't be complete if I do not explain that we also need to write 2 other registers 
 
 We must also set the DMP Memory (DMP_DATA_RDY_STATUS) depending on the sensor we need
 
-<img title="" src="/ressources/data_ready.png" alt="" width="439">
+<img title="" src="/ressources/data_ready.png">
 
 and also set the DMP memory (DMP_DATA_MOTION_EVENT_CTRL) the same way
 
-<img title="" src="/ressources/motion_event.png" alt="" width="439">
+<img title="" src="/ressources/motion_event.png">
 
 Once we have done all this, the DMP processsor is ready to output message to the FIFO. I won't explain the way it works, quite simple, but once a message is received, we must parse the FIFO buffer, starting to read the header (2 bytes) and eventually the second header (2 bytes). They will both inform us of the data type that is present into the buffer (and has always the same structure) and we just need to process byte by byte.
 
@@ -102,7 +102,7 @@ Once we have done all this, the DMP processsor is ready to output message to the
 
 The library handles does not handle all the sensors available in the DMP. Only a few of them can be processed, the list is given below with the correspondance between the sensors we handle and the android sensors of DMP.
 
-<img title="" src="/ressources/icm_to_android.png" alt="" width="780">
+<img title="" src="/ressources/icm_to_android.png">
 
 
 
