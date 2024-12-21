@@ -43,7 +43,7 @@ So we understand quickly
 
 We must be aware that the two sensors chips (ICM and AK09916), while mounted in the same package, do not share the same orientation.
 
-| !<img title="" src="/ressources/orientation_magnetometer_gyroscope.png"> | !<img title="" src="/ressources/orientation_compass.png"> |
+| <img title="" src="/ressources/orientation_magnetometer_gyroscope.png"> | <img title="" src="/ressources/orientation_compass.png"> |
 | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 
 Considering Accelerometer orthonomous reference (left) the compass orthonomous reference (right) is inverted for Y and Z axis. we can write :
@@ -55,8 +55,8 @@ MAG_z_ICM = - MAG_z_AK9916
 or in a matrix way
 
 MAG_ICM =  [[1   0    0]  . MAG_AK9916
-                        [0  -1   0]
-                        [0   0  -1]]
+            [0  -1   0]
+            [0   0  -1]]
 
 
 
@@ -67,7 +67,7 @@ The library itself convert the report we ask into a DMP understandable report na
 
 List of DMP reports authorized with DMP firmware are listed below. The controls bits is the internal code we need to write to DMP memory (DMP_DO_Ctrl_1) in order to activate the corresponding report. This code is in fact, the header of the expected report message
 
-<img title="" src="file:///C:/Users/Ludovic/Desktop/Micropython/ICM20948/ressources/sensors_ctrl_bits.png" alt="" width="550">
+<img title="" src="/ressources/sensors_ctrl_bits.png" alt="" width="550">
 
 As an example, when requiring Gyroscope sensor, we need to write 0x4048.
 This value corresponds to 0x4000 + 0x0040 + 0x0008 = Gyroscope + Gyroscope Calibration + Secondary Message (we'll explain later) as referenced in the chart below.
@@ -76,7 +76,7 @@ This value corresponds to 0x4000 + 0x0040 + 0x0008 = Gyroscope + Gyroscope Calib
 
 We will also need to detail what is the content we expect in the secondary message, by writing the appropriate value to DMP memory (DMP_DO_Ctrl_2).  In our example, we'd better write 0x2000 in order to receive the compass accuracy message.
 
-![](C:\Users\Ludovic\Desktop\Micropython\ICM20948\ressources\reports_2_ctrl_bits.png)
+<img title="" src="/ressources/reports_2_ctrl_bits.png" alt="" width="439">
 
 All this selection stuff if automaticaly done by the DMP_enable_sensor function and rely on importants parameter as 
 
@@ -84,17 +84,17 @@ INV_NEEDS_ACCEL_MASK0 =  0b11100010100111101000111000001010
 
 This bit line is in fact an image of the following chart
 
-![](C:\Users\Ludovic\Desktop\Micropython\ICM20948\ressources\mask_needed.png)
+<img title="" src="/ressources/mask_needed.png" alt="" width="439">
 
 Explanation won't be complete if I do not explain that we also need to write 2 other registers 
 
 We must also set the DMP Memory (DMP_DATA_RDY_STATUS) depending on the sensor we need
 
-![](C:\Users\Ludovic\Desktop\Micropython\ICM20948\ressources\data_ready.png)
+<img title="" src="/ressources/data_ready.png" alt="" width="439">
 
 and also set the DMP memory (DMP_DATA_MOTION_EVENT_CTRL) the same way
 
-![](C:\Users\Ludovic\Desktop\Micropython\ICM20948\ressources\motion_event.png)
+<img title="" src="/ressources/motion_event.png" alt="" width="439">
 
 Once we have done all this, the DMP processsor is ready to output message to the FIFO. I won't explain the way it works, quite simple, but once a message is received, we must parse the FIFO buffer, starting to read the header (2 bytes) and eventually the second header (2 bytes). They will both inform us of the data type that is present into the buffer (and has always the same structure) and we just need to process byte by byte.
 
