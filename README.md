@@ -8,10 +8,12 @@
 
 ## Greetings first
 
-A spécial thanks to Paul CLARK from Sparkfun, his C/C++ Arduino library was a real inspiration to gain the full micropython library working. You ought to give a look at
-[GitHub - sparkfun/SparkFun_ICM-20948_ArduinoLibrary: Arduino support for ICM_20948 w/ portable C backbone](https://github.com/sparkfun/SparkFun_ICM-20948_ArduinoLibrary))
+A spécial thanks to Paul CLARK from Sparkfun, his C/C++ Arduino library was a real inspiration to gain the full micropython library working.
+You ought to give a look at [GitHub - sparkfun/SparkFun_ICM-20948_ArduinoLibrary: Arduino support for ICM_20948 w/ portable C backbone](https://github.com/sparkfun/SparkFun_ICM-20948_ArduinoLibrary))
 
-The library is a single bloc of code, handling all needed parameters that were spread away in several C or C++ library, and is fully documented in order that everyone interested might complete my piece of work. As reverse engineering was a bit time consumming, I wanted this readme to be the most completed I could.
+The library is a single bloc of code, handling all needed parameters that were spread away in several C or C++ library, and is fully documented
+in order that everyone interested might complete my piece of work. As reverse engineering was a bit time consumming, I wanted this readme to be
+the most completed I could.
 
 
 
@@ -27,7 +29,7 @@ The chip is in fact composed of 3 chips
 
 - The ATMEL SAM G55 Arm® Cortex®-M4 (ATSAMG55J19) DMP chip ()
 
-- 
+
 
 The ICM chip bloc diagram is 
 
