@@ -19,7 +19,7 @@ the most completed I could.
 
 ## About the chip itself...
 
-<img title="" src="/ressources/icm20948_chip.png">
+<img title="" src="/ressources/icm20948_chip.png" width="240">
 
 The chip is in fact composed of 3 chips 
 
