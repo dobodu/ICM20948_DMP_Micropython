@@ -3,7 +3,7 @@ from math import asin, atan2, degrees, radians, sqrt
 from utime import sleep_ms, ticks_ms, ticks_us, ticks_diff, localtime
 
 LIBNAME = "ICM20948"
-LIBVERSION = "0.99-7"
+LIBVERSION = "0.99-8"
 
 # This micropython library drive the TDK ICM20948 9 axis sensors
 # It can work :
@@ -783,9 +783,10 @@ class ICM20948:
         self.write(2, ICM_ACCEL_SMPLRT_DIV_2, rate & 0xff)
         
     #Set the acceleration full scale range to +- supplied value
+    #uses ACC_SCALE_RANGE = {2: 0b00, 4: 0b01, 8: 0b10, 16: 0b11}
     def set_acc_full_scale(self, scale=16):
         
-        #Set Acc Full scale in ICM Registers
+        #Set Acc Full scale in ICM Registers      
         value = self.read(2, ICM_ACCEL_CONFIG_1) & ICM_ACCEL_CONFIG_1_ACCEL_FS_SEL_MASK
         acc_range = ACC_SCALE_RANGE[scale]
         value |= acc_range << 1
@@ -793,9 +794,10 @@ class ICM20948:
         self._acc_s = self.get_acc_sensitivity
         #Set DMP Acc Full scale in DMP Memory
         if self._dmp :
-            # 2 : 2^25 // 4 : 2^26 // 8 : 2^27 // 16 : 2^28
-            # with ACC_SCALE_RANGE = {2: 0b00, 4: 0b01, 8: 0b10, 16: 0b11}
-            # DMP_ACC_SCALE_FACTOR = bytearray([0x04, 0x00, 0x00, 0x00]) when FSR is 4g
+            #Configure Acceleration scaling to DMP
+            #Internally DMP scales Acc Raw data to 2^25 = 1g when FSR = 4g
+            #Inv library tells to write DMP_ACC_SCALE = 0x04000000 = 2^26 for 4g 
+            #We extrapolated to 2G : 2^25 // 4G : 2^26 // 8G : 2^27 // 16G : 2^28
             DMP_ACC_SCALE_FACTOR = bytearray(4)
             value = 0x01 << (25 + acc_range)
             DMP_ACC_SCALE_FACTOR[0] = value >> 24
@@ -804,7 +806,8 @@ class ICM20948:
             DMP_ACC_SCALE_FACTOR[3] = value & 0xFF
             self.DMP_write(DMP_ACC_SCALE, DMP_ACC_SCALE_FACTOR)
             #In order to output hardaware unit data as configured FSR write
-            # DMP_ACC_SCALE2_FACTOR = bytearray([0x00, 0x04, 0x00, 0x00]) when FSR  is 4g
+            #Inv library tells to write DMP_ACC_SCALE2 = 0x40000 = 2^18 for 4g
+            #We extrapolated to 1G : 2^17 // 4G : 2^18 // 8G : 2^19 // 16G : 2^20
             DMP_ACC_SCALE2_FACTOR = bytearray(4)
             value = value >> 8
             DMP_ACC_SCALE2_FACTOR[0] = value >> 24
@@ -830,8 +833,10 @@ class ICM20948:
         rate = int((1125.0 / rate) - 1)
         self.write(2, ICM_GYRO_SMPLRT_DIV, rate & 0xff)
        
-    #Set the gyro full scale range to +- supplied value (ICM and DMP Version)
+    #Set the gyro full scale range to +- supplied value
+    #uses GYRO_SCALE_RANGE = {250: 0b00, 500: 0b01, 1000: 0b10, 2000: 0b11}
     def set_gyro_full_scale(self, scale=250):
+        
         #Set Gyro Full scale in ICM Registers
         value = self.read(2, ICM_GYRO_CONFIG_1) & ICM_GYRO_CONFIG_1_GYRO_FS_SEL_MASK
         gyro_range = GYRO_SCALE_RANGE[scale]
@@ -839,7 +844,9 @@ class ICM20948:
         self.write(2, ICM_GYRO_CONFIG_1, value)
         self._gyro_s = self.get_gyro_sensitivity
         #Set DMP Gyro Full scale in DMP Memory
-        if self._dmp :   
+        if self._dmp :        
+            #Inv library tells to write DMP_GYRO_SCALE = 0x10000000 = 2^28 for 2000 dps 
+            #We extrapolated to 250 : 2^25 // 500 : 2^26 // 1000 : 2^27 // 2000 : 2^28      
             DMP_GYRO_SCALE_FACTOR = bytearray(4)
             value = 0x01 << (25 + gyro_range)
             DMP_GYRO_SCALE_FACTOR[0] = value >> 24
@@ -1183,11 +1190,6 @@ class ICM20948:
         #Turn Off data ready interrupt
         self.reg_config(0,ICM_INT_ENABLE_1,0x1,False)
         
-        #Set Accelerator Sample_rate 56.25 Hz
-        self.set_acc_sample_rate(56.25)
-        #Set Gyroscope Sample_rate 55Hz
-        self.set_gyro_sample_rate(55)
-        
         #Upload DMP firmware
         self.DMP_load_firmware()
         
@@ -1203,13 +1205,13 @@ class ICM20948:
         #Set the Single FIFO Priority Select register to 0xE4
         self.write(0, ICM_SINGLE_FIFO_PRIORITY_SEL,0xE4)
         
-        #Configure Acceleration in order to align acc_raw_data = 2^25 = 1g when FSR = 4g
-        # for 4g write 0x04000000, for 16g write 0x08000000
-        #DMP_ACC_SCALE_FACTOR = [0x04, 0x00, 0x00, 0x00]
-        #self.DMP_write(DMP_ACC_SCALE, DMP_ACC_SCALE_FACTOR)
-        #DMP_ACC_SCALE_FACTOR2 = [0x00, 0x04, 0x00, 0x00]
-        #self.DMP_write(DMP_ACC_SCALE2, DMP_ACC_SCALE_FACTOR2)
+        #Configure Acceleration and Gyroscope : Ranges, Samples Rates and DMP scaling factors 
         self.set_acc_full_scale(4)
+        self.set_gyro_full_scale(2000)
+        self.set_acc_sample_rate(56.25)
+        self.set_gyro_sample_rate(56.25)
+        self.DMP_gyro_scaling(56.25, 2000)
+        self.DMP_acc_scaling(56.25)
         
         #Configure Compass Mount Matrix
         #As explained on top Matrix will be
@@ -1250,44 +1252,7 @@ class ICM20948:
         self.DMP_write(DMP_B2S_MTX_20, DMP_B2S_MOUNT_MATRIX_SCALED_ZERO)
         self.DMP_write(DMP_B2S_MTX_21, DMP_B2S_MOUNT_MATRIX_SCALED_ZERO)
         self.DMP_write(DMP_B2S_MTX_22, DMP_B2S_MOUNT_MATRIX_SCALED_PLUS1)
-        
-        #Configure DMP Gyro Scaling Factor
-        # @param[in] gyro_div Value written to GYRO_SMPLRT_DIV register, where
-        # 0=1125Hz sample rate, 1=562.5Hz sample rate, ... 4=225Hz sample rate, ...
-        # 10=102.2727Hz sample rate, ... 19 = 55Hz 
-        # @param[in] gyro_level 0=250 dps, 1=500 dps, 2=1000 dps, 3=2000 dps
-        self.DMP_set_gyro_sf(19,3) #  19 = 55Hz, 3 = 2000dps
-        
-        #Configure DMP Gyro Full scale to 2000 dps
-        #DMP_GYRO_SCALE_FACTOR = [0x10, 0x00, 0x00, 0x00]
-        #self.DMP_write(DMP_GYRO_SCALE, DMP_GYRO_SCALE_FACTOR)
-        self.set_gyro_full_scale(2000)
-        
-        #Configure Acceleration Only Gains
-        # 15252014 (225Hz) 30504029 (112Hz) 61117001 (56Hz)
-        DMP_ACC_ONLY_GAIN_FACTOR = [0x03, 0xA4, 0x92, 0x49] # 56Hz
-        #DMP_ACC_ONLY_GAIN_FACTOR = [0x01, 0xD1, 0x74, 0x5D] # 112Hz
-        #DMP_ACC_ONLY_GAIN_FACTOR = [0x00, 0xE8, 0xBA, 0x2E] # 225Hz
-        self.DMP_write(DMP_ACCEL_ONLY_GAIN, DMP_ACC_ONLY_GAIN_FACTOR)
-        
-        #Configure Acceleration Alpha Var
-        # 1026019965 (225Hz) 977872018 (112Hz) 882002213 (56Hz)
-        DMP_ACCEL_ALPHA_VAR_FACTOR = [0x34, 0x92, 0x49, 0x25] # 56Hz
-        #DMP_ACCEL_ALPHA_VAR_FACTOR = [0x3A, 0x49, 0x24, 0x92] # 112Hz
-        #DMP_ACCEL_ALPHA_VAR_FACTOR = [0x3D, 0x27, 0xD2, 0x7D] # 225Hz
-        self.DMP_write(DMP_ACCEL_ALPHA_VAR, DMP_ACCEL_ALPHA_VAR_FACTOR)
-        
-        #Configure Acceleration A Var
-        # 47721859 (225Hz) 95869806 (112Hz) 191739611 (56Hz)
-        DMP_ACCEL_A_VAR_FACTOR = [0x0B, 0x6D, 0xB6, 0xDB] # 56Hz
-        #DMP_ACCEL_A_VAR_FACTOR = [0x05, 0xB6, 0xDB, 0x6E] # 112Hz
-        #DMP_ACCEL_A_VAR_FACTOR = [0x02, 0xD8, 0x2D, 0x83] # 225Hz
-        self.DMP_write(DMP_ACCEL_A_VAR, DMP_ACCEL_A_VAR_FACTOR)
-        
-        #Configure the Accel Cal Rate
-        DMP_ACCEL_CAL_RATE_FACTOR = [0x00, 0x00]
-        self.DMP_write(DMP_ACCEL_CAL_RATE, DMP_ACCEL_CAL_RATE_FACTOR)
-        
+                      
         #Configure the Compass Time Buffer
         #The I2C Master ODR Configuration (see above) sets the magnetometer read rate to 68.75Hz.
         #Let's set the Compass Time Buffer to 69 (Hz) = 0x45.
@@ -1720,7 +1685,6 @@ class ICM20948:
         self._dbg(2, "INV_EVENT_CTRL", hex(_inv_event_ctl))
         self.DMP_write(DMP_DATA_MOTION_EVENT_CTRL, self._buffer)
         
-        
         #Enable FIFO and DMP
         self.reg_config(0, ICM_USER_CTRL, ICM_USER_CTRL_DMP_EN | ICM_USER_CTRL_FIFO_EN, True)
         
@@ -1730,11 +1694,10 @@ class ICM20948:
         #Reset FIFO
         self.reset_FIFO()
         
-        #Set Low Power on
-        #self.reg_config(0,ICM_PWR_MGMT_1, ICM_PWR_MGMT_1_LP, True)
-        
-    def DMP_set_gyro_sf(self, div , gyro_level = 4) :
-        #gyro_level should be set to 4 regardless of fullscale, due to the addition of API dmp_icm20648_set_gyro_fsr()
+    def DMP_gyro_scaling(self, gyro_rate=56.25, gyro_range = 2000) :
+                
+        div = int((1125.0 / gyro_rate) - 1)
+        gyro_scale = GYRO_SCALE_RANGE[gyro_range]
 
         #Read Timebase_correction_PLL register from bank 1
         pll = self.read(1, ICM_TIMEBASE_CORRECTION_PLL)
@@ -1744,9 +1707,9 @@ class ICM20948:
         MagicConstantScale = 100000
         
         if (pll & 0x80) :
-            result =  MagicConstant * (0x01 << gyro_level) * (1 + div) / (1270 - (pll & 0x7F)) / MagicConstantScale
+            result =  MagicConstant * (0x01 << gyro_scale) * (1 + div) / (1270 - (pll & 0x7F)) / MagicConstantScale
         else :
-            result = MagicConstant * (0x01 << gyro_level) * (1 + div) / (1270 + pll) / MagicConstantScale
+            result = MagicConstant * (0x01 << gyro_scale) * (1 + div) / (1270 + pll) / MagicConstantScale
 
         if (result > 0x7FFFFFFF) :
             self._gyro_sf = 0x7FFFFFFF
@@ -1760,6 +1723,29 @@ class ICM20948:
         self._buffer[3] = self._gyro_sf & 0xFF
         self._dbg(2, "DMP_SET_GYRO_SF PLL", pll, "DMP_GYRO_SF", self._gyro_sf)
         self.DMP_write(DMP_GYRO_SF, self._buffer)
+        
+    def DMP_acc_scaling(self, acc_rate=56.25) :
+                
+        if (acc_rate == 225) :
+            DMP_ACC_ONLY_GAIN_FACTOR = [0x00, 0xE8, 0xBA, 0x2E]
+            DMP_ACCEL_ALPHA_VAR_FACTOR = [0x3D, 0x27, 0xD2, 0x7D]
+            DMP_ACCEL_A_VAR_FACTOR = [0x02, 0xD8, 0x2D, 0x83]
+        elif (acc_rate == 112.5) :
+            DMP_ACC_ONLY_GAIN_FACTOR = [0x01, 0xD1, 0x74, 0x5D]
+            DMP_ACCEL_ALPHA_VAR_FACTOR = [0x3A, 0x49, 0x24, 0x92]
+            DMP_ACCEL_A_VAR_FACTOR = [0x02, 0xD8, 0x2D, 0x83]
+        else : #general case will assume acc_rate = 56.25
+            DMP_ACC_ONLY_GAIN_FACTOR = [0x03, 0xA4, 0x92, 0x49]
+            DMP_ACCEL_ALPHA_VAR_FACTOR = [0x34, 0x92, 0x49, 0x25]
+            DMP_ACCEL_A_VAR_FACTOR = [0x0B, 0x6D, 0xB6, 0xDB]    
+                
+        self.DMP_write(DMP_ACCEL_ONLY_GAIN, DMP_ACC_ONLY_GAIN_FACTOR)
+        self.DMP_write(DMP_ACCEL_ALPHA_VAR, DMP_ACCEL_ALPHA_VAR_FACTOR)
+        self.DMP_write(DMP_ACCEL_A_VAR, DMP_ACCEL_A_VAR_FACTOR)
+            
+        #Configure the Accel Cal Rate
+        DMP_ACCEL_CAL_RATE_FACTOR = [0x00, 0x00]
+        self.DMP_write(DMP_ACCEL_CAL_RATE, DMP_ACCEL_CAL_RATE_FACTOR)
         
         
 #===== Below are all general function not linked directly with ICM20948 but usefull =========
