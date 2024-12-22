@@ -31,7 +31,7 @@ The chip is in fact composed of 3 chips
 
 
 
-The ICM chip bloc diagram is 
+The ICM 20948 chip bloc diagram is 
 
 <img title="" src="/ressources/icm20948_bloc.png">
 
@@ -40,6 +40,10 @@ So we understand quickly
 - That Compass access is not straight forward but can be accessed by I2C Master interface (I2C master read slave register and outputs values in the appropriate register of the ICM chip)
 
 - DMP processor is working standalone, can access accelerometer and gyroscope sensors but also compass (thanks to I2C master) and can output FIFO datas.
+
+The DMP (SAM G55) bloc diagram is
+
+<img title="" src="/ressources/sam_G55_bloc.png">
 
 ## Orientation Considerations
 
