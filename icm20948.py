@@ -3,7 +3,7 @@ from math import asin, atan2, degrees, radians, sqrt
 from utime import sleep_ms, ticks_ms, ticks_us, ticks_diff, localtime
 
 LIBNAME = "ICM20948"
-LIBVERSION = "0.99-8"
+LIBVERSION = "0.99-9"
 
 # This micropython library drive the TDK ICM20948 9 axis sensors
 # It can work :
@@ -326,9 +326,6 @@ DMP_CPASS_MTX_21 = 0x18C # 24*16+12
 DMP_CPASS_MTX_22 = 0x190 # 25*16+0
 #BIAS CALIBRATION  - ALL 32 BITS
 # Scaled by ACC 2^12 (FSR 4G) - GYRO 2^15 - COMPASS 2^16
-DMP_GYRO_BIAS_X = 0x8B4 # 139*16+4
-DMP_GYRO_BIAS_Y = 0x8B8 # 139*16+8
-DMP_GYRO_BIAS_Z = 0x8BC # 139*16+12
 DMP_ACCEL_BIAS_X = 0x6E4 # 110*16+4
 DMP_ACCEL_BIAS_Y = 0x6E8 # 110*16+8
 DMP_ACCEL_BIAS_Z = 0x6EC # 110*16+12
@@ -336,6 +333,9 @@ DMP_CPASS_BIAS_X = 0x7E4 # 126*16+4
 DMP_CPASS_BIAS_Y = 0x7E8 # 126*16+8
 DMP_CPASS_BIAS_Z = 0x7EC # 126*16+12
 DMP_GYRO_ACCURACY = 0x8A2 # 138*16+2
+DMP_GYRO_BIAS_X = 0x8B4 # 139*16+4
+DMP_GYRO_BIAS_Y = 0x8B8 # 139*16+8
+DMP_GYRO_BIAS_Z = 0x8BC # 139*16+12
 DMP_GYRO_BIAS_SET = 0x8A6 # 138*16+6
 DMP_GYRO_LAST_TEMPR = 0x860 # 134*16+0
 DMP_GYRO_SLOPE_X = 0x4E4 # 78*16+4
@@ -679,6 +679,31 @@ class ICM20948:
         self._gyrbias = (0,0,0) # gyr bias
         self._magbias = (0,0,0) # mag bias
         
+        #Sensor storage from FIFO
+        self._acc = (0,0,0)
+        self._acc_ac = 0
+        self._gyr = (0,0,0)
+        self._gyr_ac = 0
+        self._mag = (0,0,0)
+        self._mag_ac = 0
+        self._gyr_cal = (0,0,0)
+        self._mag_cal = (0,0,0)
+        self._quat6 = (0,0,0)
+        self._pquat6 = (0,0,0)
+        self._quat9 = (0,0,0)
+        self._quat9_ac = 0
+        self._gquat6 = (0,0,0)
+        self._gquat6_ac = 0
+        self._press = 0
+        self._temp = 0
+        self._als = 0
+        self._steps = 0
+        self._fsynch = 0
+        self._pickup = 0
+        self._sec_onoff = 0
+        self._gyr_count = 0
+        self._act_recog = (0,0,0)
+         
         #Quaterion and Orientation
         self.q = [1.0, 0.0, 0.0, 0.0] # vector to hold quaternion
         self._north_angle = 0 # angle from magnetic north to real north
@@ -909,6 +934,19 @@ class ICM20948:
                     gyrmin[x] = min(gyrmin[x], gyrxyz[x])
             self._gyrbias = tuple(map(lambda a, b: (a +b)/2, gyrmin, gyrmax))
             self._gyrbias_en = True
+            #Proceed for DMP (need to be debugged)
+            """if self._dmp_ready :
+                dmp_gyrbias_x = int(2**15*self._gyrbias[0])
+                dmp_gyrbias_y = int(2**15*self._gyrbias[1])
+                dmp_gyrbias_z = int(2**15*self._gyrbias[2])
+                DMP_GYR_X = bytearray(2)
+                DMP_GYR_X[0] = dmp_gyrbias_x >> 16
+                DMP_GYR_X[1] = dmp_gyrbias_x & 0xFF
+                self.DMP_write(DMP_GYRO_BIAS_X, DMP_GYR_X)
+                self.DMP_write(DMP_GYRO_BIAS_Y, DMP_GYR_X)
+                self.DMP_write(DMP_GYRO_BIAS_Z, DMP_GYR_X)
+                #Reset DMP
+                self.reg_config(0, ICM_USER_CTRL, ICM_USER_CTRL_DMP_RST, True)"""    
             self._dbg(1,"Gyroscope calibration done",self._gyrbias)
         else :
             self._gyrbias = (0,0,0)
@@ -945,42 +983,54 @@ class ICM20948:
 
     #Read acceleration data
     def acc(self):
-        data = self.read(0,ICM_ACCEL_XOUT_H, 6)
-        ax, ay, az = unpack_from(">3h", data)
-        ax *= self._acc_s
-        ay *= self._acc_s
-        az *= self._acc_s
-        if self._accbias_en :
-            ax -= self._accbias[0]
-            ay -= self._accbias[1]
-            az -= self._accbias[2]
-        return ax, ay, az
+        if self._dmp_ready :
+            self.DMP_fifo_proceed()
+        else :
+            data = self.read(0,ICM_ACCEL_XOUT_H, 6)
+            ax, ay, az = unpack_from(">3h", data)
+            ax *= self._acc_s
+            ay *= self._acc_s
+            az *= self._acc_s
+            if self._accbias_en :
+                ax -= self._accbias[0]
+                ay -= self._accbias[1]
+                az -= self._accbias[2]
+            self._acc = ax, ay, az
+        return self._acc
 
     #Read gyroscope data
     def gyro(self):
-        data = self.read(0, ICM_GYRO_XOUT_H, 6)
-        gx, gy, gz = unpack_from(">3h", data)
-        gx *= self._gyro_s
-        gy *= self._gyro_s      
-        gz *= self._gyro_s
-        if self._gyrbias_en :
-            gx -= self._gyrbias[0]
-            gy -= self._gyrbias[1]
-            gz -= self._gyrbias[2]
-        return gx, gy, gz
+        if self._dmp_ready :
+            self.DMP_fifo_proceed()
+        else :
+            data = self.read(0, ICM_GYRO_XOUT_H, 6)
+            gx, gy, gz = unpack_from(">3h", data)
+            gx *= self._gyro_s
+            gy *= self._gyro_s      
+            gz *= self._gyro_s
+            if self._gyrbias_en :
+                gx -= self._gyrbias[0]
+                gy -= self._gyrbias[1]
+                gz -= self._gyrbias[2]
+            self._gyr = gx, gy, gz
+        return self._gyr
 
     #Read magnetometer data straight for slave DATA_01 (linked to AK_HXL)
     def mag(self):
-        data = self.read(0, ICM_EXT_SLV_SENS_DATA_01, 6)
-        mx, my, mz = unpack_from("<3h", data)
-        mx *= self._mag_s
-        my *= self._mag_s
-        mz *= self._mag_s
-        if self._magbias_en :
-            mx -= self._magbias[0]
-            my -= self._magbias[1]
-            mz -= self._magbias[2]
-        return mx, my, mz
+        if self._dmp_ready :
+            self.DMP_fifo_proceed()
+        else :
+            data = self.read(0, ICM_EXT_SLV_SENS_DATA_01, 6)
+            mx, my, mz = unpack_from("<3h", data)
+            mx *= self._mag_s
+            my *= self._mag_s
+            mz *= self._mag_s
+            if self._magbias_en :
+                mx -= self._magbias[0]
+                my -= self._magbias[1]
+                mz -= self._magbias[2]
+            self._mag = mx, my, mz
+        return self._mag
 
 #===========Below are all internal communication functions ===================================
 
@@ -1313,6 +1363,7 @@ class ICM20948:
             ax *= self._acc_s #adjust result with sensiticity
             ay *= self._acc_s
             az *= self._acc_s
+            self._acc = ax, ay, az
             self._dbg(8, "FIFO Acceleration\tax {:.4f}\tay {:.4f}\taz {:.4f}".format(ax,ay,az))
             fcount -= DMP_Raw_Accel_Bytes  #Decrease of Acc
         
@@ -1327,6 +1378,7 @@ class ICM20948:
             gx *= self._gyro_s #adjust result with sensiticity
             gy *= self._gyro_s
             gz *= self._gyro_s
+            self._gyr = gx, gy, gz
             self._dbg(8, "FIFO Gyroscope\tgx {:.4f}\tgy {:.4f}\tgz {:.4f}".format(gx,gy,gz))
             self._dbg(8, "FIFO Gyro Bias\tgbx {:.4f}\tgby {:.4f}\tgbz {:.4f}".format(gbx,gby,gbz))
             fcount -= DMP_Raw_Gyro_Bytes + DMP_Gyro_Bias_Bytes
@@ -1342,6 +1394,7 @@ class ICM20948:
             mx *= self._mag_s
             my *= self._mag_s
             mz *= self._mag_s
+            self._mag = mx, my, mz
             self._dbg(8, "FIFO Compass\t\tmx {:.4f}\tmy {:.4f}\tmz {:.4f}\tTime {:.0f}".format(mx,my,mz,self.newtime))
             fcount -= DMP_Compass_Bytes
         
@@ -1351,9 +1404,9 @@ class ICM20948:
                 fcount = self.DMP_fifo_count()
             if (fcount < DMP_ALS_Bytes) :
                 return
-            data = self.read(0, ICM_FIFO_R_W, DMP_ALS_Bytes)
+            self._als = self.read(0, ICM_FIFO_R_W, DMP_ALS_Bytes)
             #To do process
-            self._dbg(8, "FIFO ALS not implemented")
+            self._dbg(8, "FIFO ALS not implemented", self._als)
             fcount -= DMP_ALS_Bytes
         
         #Quaternion 6
@@ -1367,6 +1420,7 @@ class ICM20948:
             q1 /= 2**30  # The quaternion data is scaled by 2^30.
             q2 /= 2**30
             q3 /= 2**30
+            self._quat6 = q1, q2, q3
             #To do process
             self._dbg(8, "FIFO Quaternion_6\tq1 {:.4f}\tq2 {:.4f}\tq3 {:.4f}".format(q1,q2,q3))
             fcount -= DMP_Quat6_Bytes
@@ -1383,6 +1437,8 @@ class ICM20948:
             q2 /= 2**30
             q3 /= 2**30
             acc /= 2**16
+            self._quat9 = q1, q2, q3
+            self._quat9_ac = acc
             self._dbg(8, "FIFO Quaternion_9\tq1 {:.4f}\tq2 {:.4f}\tq3 {:.4f}\taccuracy {:.4f}".format(q1,q2,q3,acc))
             fcount -= DMP_Quat9_Bytes
             
@@ -1397,6 +1453,7 @@ class ICM20948:
             q1 /= 2**30  # The quaternion data is scaled by 2^30.
             q2 /= 2**30
             q3 /= 2**30
+            self._pquat6 = q1, q2, q3
             #To do process
             self._dbg(8, "FIFO PQuaternion_6\tq1 {:.4f}\tq2 {:.4f}\tq3 {:.4f}".format(q1,q2,q3))
             fcount -= DMP_Pedom_Quat6_Bytes
@@ -1413,6 +1470,8 @@ class ICM20948:
             q2 /= 2**30
             q3 /= 2**30
             acc /= 2**16
+            self._gquat6 = q1, q2, q3
+            self._gquat6_ac = acc
             self._dbg(8, "FIFO Geomag\tq1 {:.4f}\tq2 {:.4f}\tq3 {:.4f}\taccuracy {:.4f}".format(q1,q2,q3,acc))
             fcount -= DMP_Geomag_Bytes
             
@@ -1423,9 +1482,9 @@ class ICM20948:
             if (fcount < DMP_Pressure_Bytes) :
                 return
             self._data = self.read(0, ICM_FIFO_R_W, DMP_Pressure_Bytes)
-            press = self._data[0] | (self._data[1] << 8) | (self._data[2] << 16)
-            temp = self._data[3] | (self._data[4] << 8) | (self._data[5] << 16)
-            self._dbg(8, "FIFO Press&Temp\tPress {:.1f}\tTemp {:.1f}".format(press,temp))
+            self._press = self._data[0] | (self._data[1] << 8) | (self._data[2] << 16)
+            self._temp = self._data[3] | (self._data[4] << 8) | (self._data[5] << 16)
+            self._dbg(8, "FIFO Press&Temp\tPress {:.1f}\tTemp {:.1f}".format(self._press,self._temp))
             fcount -= DMP_Pressure_Bytes
         
         #Gyro calibration 
@@ -1439,6 +1498,7 @@ class ICM20948:
             gx_cal /= 2**30
             gy_cal /= 2**30
             gz_cal /= 2**30
+            self._gyr_cal = gx_cal, gy_cal, gz_cal
             self._dbg(8, "FIFO Gyro Calibration\tgxc {:.4f}\tgyc {:.4f}\tgzc {:.4f}".format(gx_cal, gy_cal ,gz_cal))
             fcount -= DMP_Gyro_Calibr_Bytes
         
@@ -1453,6 +1513,7 @@ class ICM20948:
             mx_cal /= 2**30
             my_cal /= 2**30
             mz_cal /= 2**30
+            self._mag_cal = mx_cal, my_cal, mz_cal
             self._dbg(8, "FICO Compass Calibration\tmxc {:.4f}\tmyc {:.4f}\tmzc {:.4f}".format(mx_cal, my_cal ,mz_cal))
             fcount -= DMP_Compass_Calibr_Bytes
         
@@ -1463,9 +1524,9 @@ class ICM20948:
             if (fcount < DMP_Step_Detector_Bytes) :
                 return
             self._data = self.read(0, ICM_FIFO_R_W, DMP_Step_Detector_Bytes)
-            steps = self._data[0]<<24 | self._data[1]<<16 | self._data[2] << 8 | self._data[3] # MSB first
+            self._steps = self._data[0]<<24 | self._data[1]<<16 | self._data[2] << 8 | self._data[3] # MSB first
             #To do process
-            self._dbg(8, "FIFO Step Detector", steps)
+            self._dbg(8, "FIFO Step Detector", self._steps)
             fcount -= DMP_Step_Detector_Bytes
         
         #Check bit per bit header2
@@ -1477,8 +1538,8 @@ class ICM20948:
             if (fcount < DMP_Accel_Accuracy_Bytes) :
                 return
             self._data = self.read(0, ICM_FIFO_R_W, DMP_Accel_Accuracy_Bytes)
-            accuracy = self._data[0]<<8 | self._data[1]
-            self._dbg(8, "FIFO Accel Accuracy", accuracy)
+            self._acc_ac = self._data[0]<<8 | self._data[1]
+            self._dbg(8, "FIFO Accel Accuracy", self._acc_ac)
             fcount -= DMP_Accel_Accuracy_Bytes
         
         #Gyro Accuracy
@@ -1488,8 +1549,8 @@ class ICM20948:
             if (fcount < DMP_Gyro_Accuracy_Bytes) :
                 return
             self._data = self.read(0, ICM_FIFO_R_W, DMP_Gyro_Accuracy_Bytes)
-            accuracy = self._data[0]<<8 | self._data[1]
-            self._dbg(8, "FIFO Gyro Accuracy", accuracy)
+            self._gyr_ac = self._data[0]<<8 | self._data[1]
+            self._dbg(8, "FIFO Gyro Accuracy", self._gyr_ac)
             fcount -= DMP_Gyro_Accuracy_Bytes
         
         #Compass Accuracy
@@ -1499,8 +1560,8 @@ class ICM20948:
             if (fcount < DMP_Compass_Accuracy_Bytes) :
                 return
             self._data = self.read(0, ICM_FIFO_R_W, DMP_Compass_Accuracy_Bytes)
-            accuracy = self._data[0]<<8 | self._data[1]
-            self._dbg(8, "FIFO Compass Accuracy", accuracy)
+            self._mag_ac = self._data[0]<<8 | self._data[1]
+            self._dbg(8, "FIFO Compass Accuracy", self._mag_ac)
             fcount -= DMP_Compass_Accuracy_Bytes
         
         #Fsynch Detection
@@ -1510,9 +1571,9 @@ class ICM20948:
             if (fcount < DMP_Fsync_Detection_Bytes) :
                 return
             self._data = self.read(0, ICM_FIFO_R_W, DMP_Fsync_Detection_Bytes)
-            fsynch = self._data[0]<<8 | self._data[1]
+            self._fsynch = self._data[0]<<8 | self._data[1]
             #To do process
-            self._dbg(8, "FIFO FSynch Detection", fsynch)
+            self._dbg(8, "FIFO FSynch Detection", self._fsynch)
             fcount -= DMP_Fsync_Detection_Bytes
         
         #Pickup
@@ -1522,8 +1583,8 @@ class ICM20948:
             if (fcount < DMP_Pickup_Bytes) :
                 return
             self._data = self.read(0, ICM_FIFO_R_W, DMP_Pickup_Bytes)
-            pickup = self._data[0]<<8 | self._data[1]
-            self._dbg(8, "FIFO Pickup", pickup)
+            self._pickup = self._data[0]<<8 | self._data[1]
+            self._dbg(8, "FIFO Pickup not implemented", self._pickup)
             fcount -= DMP_Pickup_Bytes
         
         #Activity recog
@@ -1533,9 +1594,9 @@ class ICM20948:
             if (fcount < DMP_Activity_Recognition_Bytes) :
                 return
             self._data = self.read(0, ICM_FIFO_R_W, DMP_Activity_Recognition_Bytes)
-            act_a, act_b, act_c = unpack_from(">2bl", self.data)
+            self._act_recog = unpack_from(">2bl", self.data)
             #To do process
-            self._dbg(8, "FIFO Activity Recognition not implemented")
+            self._dbg(8, "FIFO Activity Recognition not implemented",self._act_recog)
             fcount -= DMP_Activity_Recognition_Bytes
         
         #Secondary On Off
@@ -1545,9 +1606,9 @@ class ICM20948:
             if (fcount < DMP_Secondary_On_Off_Bytes) :
                 return
             self._data = self.read(0, ICM_FIFO_R_W, DMP_Secondary_On_Off_Bytes)
-            sec_onoff = unpack_from(">h", self._data)
+            self._sec_onoff = unpack_from(">h", self._data)
             #To do process
-            self._dbg(8, "FIFO Secondary On-Off not implemented", hex(sec_onoff))
+            self._dbg(8, "FIFO Secondary On-Off not implemented", self._sec_onoff)
             fcount -= DMP_Secondary_On_Off_Bytes
         
         #Finally process the footer
@@ -1556,9 +1617,15 @@ class ICM20948:
         if (fcount < DMP_Footer_Bytes) :
                 return
         self._data = self.read(0, ICM_FIFO_R_W, DMP_Footer_Bytes)
-        footer = self._data[0]<<8 | self._data[1]
-        self._dbg(4, "FIFO Gyro Count", footer)
+        self._gyr_count = self._data[0]<<8 | self._data[1]
+        self._dbg(4, "FIFO Gyro Count", self._gyr_count)
         fcount -= DMP_Footer_Bytes
+
+    #Proceed the whole FIFO
+    def DMP_fifo_proceed(self):
+        while(self.DMP_fifo_count() > 0):
+            self.DMP_fifo_read()
+        return
 
     #Write to DMP register       
     def DMP_write(self, register, data):
