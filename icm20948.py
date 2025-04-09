@@ -1594,7 +1594,7 @@ class ICM20948:
             if (fcount < DMP_Activity_Recognition_Bytes) :
                 return
             self._data = self.read(0, ICM_FIFO_R_W, DMP_Activity_Recognition_Bytes)
-            self._act_recog = unpack_from(">2bl", self.data)
+            self._act_recog = unpack_from(">2bl", self._data)
             #To do process
             self._dbg(8, "FIFO Activity Recognition not implemented",self._act_recog)
             fcount -= DMP_Activity_Recognition_Bytes
