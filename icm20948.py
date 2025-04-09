@@ -3,7 +3,7 @@ from math import asin, atan2, degrees, radians, sqrt
 from utime import sleep_ms, ticks_ms, ticks_us, ticks_diff, localtime
 
 LIBNAME = "ICM20948"
-LIBVERSION = "0.99-9"
+LIBVERSION = "0.99-9.1"
 
 # This micropython library drive the TDK ICM20948 9 axis sensors
 # It can work :
