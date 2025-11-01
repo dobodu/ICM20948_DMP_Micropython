@@ -1,9 +1,18 @@
 from ustruct import unpack_from
 from math import asin, atan2, degrees, radians, sqrt
 from utime import sleep_ms, ticks_ms, ticks_us, ticks_diff, localtime
+import gc
+
+#DMP Firmware binary file
+#Version 0.99-9.2 has changed the DMP firmware loading method in order to work with more devices
+#Before : ASCII file (91 ko) --> After :  Binary file (14 ko)
+
+DMP_ROM = 'icm20948_dmp.bin'
+
+#LIBRARY Informations
 
 LIBNAME = "ICM20948"
-LIBVERSION = "0.99-9.1"
+LIBVERSION = "0.99-9.2"
 
 # This micropython library drive the TDK ICM20948 9 axis sensors
 # It can work :
@@ -982,6 +991,7 @@ class ICM20948:
         return temp_deg_c
 
     #Read acceleration data
+    @property
     def acc(self):
         if self._dmp_ready :
             self.DMP_fifo_proceed()
@@ -999,6 +1009,7 @@ class ICM20948:
         return self._acc
 
     #Read gyroscope data
+    @property
     def gyro(self):
         if self._dmp_ready :
             self.DMP_fifo_proceed()
@@ -1016,6 +1027,7 @@ class ICM20948:
         return self._gyr
 
     #Read magnetometer data straight for slave DATA_01 (linked to AK_HXL)
+    @property
     def mag(self):
         if self._dmp_ready :
             self.DMP_fifo_proceed()
@@ -1162,9 +1174,9 @@ class ICM20948:
             self._dmp_bank = dmp_bank
 
     #Load the DMP blob to the Chipset
-    def DMP_load_firmware(self, burstmode = True):
+    def DMP_load_firmware_oldmethod(self, burstmode = True):
         
-        from icm20948_img_dmp3a import dmp_img
+        from icm20948_dmp import dmp_img
         mem_bank = 0
         start_address = DMP_LOAD_START
         data_pos = 0
@@ -1194,7 +1206,43 @@ class ICM20948:
             print(text, end="\r")
         self._dbg(1,"DMP Firmware Upload Successfull !")
 
-    #Configure Digital Motion Processor
+
+    def DMP_load_firmware(self, burstmode = True):
+    
+        mem_bank = 0
+        start_address = DMP_LOAD_START
+        data_pos = 0
+    
+        with open(DMP_ROM, 'rb') as f:
+            dmp_img = f.read()
+            
+        # Write DMP firmware to memory
+        while data_pos < len(dmp_img):
+            write_len = min((DMP_MEM_BANK_SIZE - start_address, len(dmp_img[data_pos:])))
+            data = dmp_img[data_pos:data_pos + write_len]
+            address = start_address
+            self.DMP_bank(mem_bank)
+            
+            #Write firmware Byte per byte (Original but slow)
+            if not burstmode :
+                for d in data:
+                    self.write(0, ICM_MEM_START_ADDR, address)
+                    self.write(0, ICM_MEM_R_W, d)
+                    address += 1    
+            #Write firmware in burst mode (up to 256 byte at a time : Damn fast)
+            else :
+                self.write(0, ICM_MEM_START_ADDR, address)
+                self.write_bytes(0, ICM_MEM_R_W, bytes(data))
+            
+            data_pos += write_len
+            mem_bank += 1
+            start_address = 0
+            text = "\rDBG:\t ICM20948 : \t Uploading DMP Microcode {:.0f}%".format(100*data_pos/len(dmp_img))
+            print(text, end="\r")
+        self._dbg(1,"DMP Firmware Upload Successfull !") 
+
+
+#Configure Digital Motion Processor
     def DMP_config(self):
         
         #Enable (En = True) SLV0 to read (RnW = True and nothing in DO) 10 byte AK09916 RSV2 register
@@ -1594,7 +1642,7 @@ class ICM20948:
             if (fcount < DMP_Activity_Recognition_Bytes) :
                 return
             self._data = self.read(0, ICM_FIFO_R_W, DMP_Activity_Recognition_Bytes)
-            self._act_recog = unpack_from(">2bl", self._data)
+            self._act_recog = unpack_from(">2bl", self.data)
             #To do process
             self._dbg(8, "FIFO Activity Recognition not implemented",self._act_recog)
             fcount -= DMP_Activity_Recognition_Bytes
