@@ -6,6 +6,12 @@
 
 - Handles DMP (Digital Motion Processor) to output sensors but also fusion quaternions.
 
+<p align="left">This library was build to work with PSRAM extended devices</p>  
+
+- So you need a bit more RAM than basic devices in order to load the DMP firmware
+
+- However, thank to philippebourcier (ISSUE 5) who made it possible to load "bank per bank" it's no more a problem
+
 ## Greetings first
 
 A spécial thanks to Paul CLARK from Sparkfun, his C/C++ Arduino library was a real inspiration to gain the full micropython library working.
