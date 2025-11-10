@@ -12,7 +12,7 @@ DMP_ROM = 'icm20948_dmp.bin'
 #LIBRARY Informations
 
 LIBNAME = "ICM20948"
-LIBVERSION = "0.99-9.2"
+LIBVERSION = "0.99-9.3"
 
 # This micropython library drive the TDK ICM20948 9 axis sensors
 # It can work :
@@ -2063,4 +2063,5 @@ class ICM20948:
         Pan = degrees(atan2(t3, t4))
 
         return (Roll, Tilt, Pan)
+
 
