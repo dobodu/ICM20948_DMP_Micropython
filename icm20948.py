@@ -913,11 +913,11 @@ class ICM20948:
     def acc_cal(self, enable=True, timeout=2000):
         if enable :
             timeout *= 1000
-            accmax = list(self.acc()) # Initialise max and min lists with current values
+            accmax = list(self.acc) # Initialise max and min lists with current values
             accmin = accmax[:]
             self.lasttime = ticks_us()
             while ((ticks_us() - self.lasttime) < timeout) :
-                accxyz = self.acc()
+                accxyz = self.acc
                 for x in range(3):
                     accmax[x] = max(accmax[x], accxyz[x])
                     accmin[x] = min(accmin[x], accxyz[x])
@@ -933,11 +933,11 @@ class ICM20948:
     def gyro_cal(self, enable=True, timeout=2000):
         if enable :
             timeout *= 1000
-            gyrmax = list(self.gyro())
+            gyrmax = list(self.gyro)
             gyrmin = gyrmax[:]
             self.lasttime = ticks_us()
             while ((ticks_us() - self.lasttime) < timeout) :
-                gyrxyz = self.gyro()
+                gyrxyz = self.gyro
                 for x in range(3):
                     gyrmax[x] = max(gyrmax[x], gyrxyz[x])
                     gyrmin[x] = min(gyrmin[x], gyrxyz[x])
@@ -966,11 +966,11 @@ class ICM20948:
     def mag_cal(self, enable=True, timeout=2000):
         if enable :
             timeout *= 1000
-            magmax = list(self.mag()) # Initialise max and min lists with current values
+            magmax = list(self.mag) # Initialise max and min lists with current values
             magmin = magmax[:]
             self.lasttime = ticks_us()
             while ((ticks_us() - self.lasttime) < timeout) :
-                magxyz = self.mag()
+                magxyz = self.mag
                 for x in range(3):
                     magmax[x] = max(magmax[x], magxyz[x])
                     magmin[x] = min(magmin[x], magxyz[x])
@@ -2063,3 +2063,4 @@ class ICM20948:
         Pan = degrees(atan2(t3, t4))
 
         return (Roll, Tilt, Pan)
+
