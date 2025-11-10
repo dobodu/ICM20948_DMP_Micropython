@@ -12,7 +12,7 @@ i2c0 = I2C(0, sda=I2C0_SDA, scl=I2C0_SCL, freq = 400_000)
 #dmp = False for direct Acc/Gyr/Magn
 #dmp = True for DMP processor
 
-choice = input("Shall we use DMP (y/n) ? ")
+choice = input("Shall we use DMP processor (y/n) ? ")
 
 imu = icm20948.ICM20948(i2c0, dmp = True if (choice=="y") else False, debug=0b01001)
 
@@ -34,15 +34,18 @@ if imu.dmp_ready :
     #imu.DMP_enable_sensor("GRAVITY",True)
     #imu.DMP_enable_sensor("LINEAR_ACCELERATION",True)
     #imu.DMP_enable_sensor("ORIENTATION",True)
-    
+
+#Calibration for Accelerometer, Gyrometer and Magnetometer
 #imu.gyro_cal()
 #imu.acc_cal()
 #imu.mag_cal()
 
+#Class properties used are acc, gyro and mag values
+
 while True:
-    a = imu.acc()
-    g = imu.gyro()
-    m = imu.mag()
+    a = imu.acc
+    g = imu.gyro
+    m = imu.mag
     imu.Q_update_full(m, a, g)
     heading = imu.heading
     pitch = imu.pitch
@@ -56,3 +59,4 @@ HPT:   {heading:7.3f} {pitch:7.3f} {roll:7.3f}
 """)
         
     sleep_ms(25)
+
