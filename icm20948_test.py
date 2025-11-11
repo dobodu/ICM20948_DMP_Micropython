@@ -46,7 +46,7 @@ while True:
     a = imu.acc
     g = imu.gyro
     m = imu.mag
-    imu.Q_update_full(m, a, g)
+    imu.Q_update_full(a, g, m)
     heading = imu.heading
     pitch = imu.pitch
     roll = imu.roll
@@ -59,4 +59,5 @@ HPT:   {heading:7.3f} {pitch:7.3f} {roll:7.3f}
 """)
         
     sleep_ms(25)
+
 
